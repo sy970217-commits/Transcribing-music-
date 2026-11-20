@@ -13,6 +13,10 @@ def test_dash_means_hold_previous_letter():
     assert parse_lyrics("하 - - 나") == ("하", HOLD, HOLD, "나")
 
 
+def test_korean_eu_letter_also_means_hold():
+    assert parse_lyrics("흔 들 ㅡ 리") == ("흔", "들", HOLD, "리")
+
+
 def test_punctuation_is_ignored():
     assert parse_lyrics("안녕, 하세요!") == ("안", "녕", "하", "세", "요")
 
