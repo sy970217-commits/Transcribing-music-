@@ -44,6 +44,22 @@ def test_notes_at_same_time_become_a_chord():
     assert pitches_in(score.parts[0]) == [(C4, E4, G4)]
 
 
+def test_melody_gets_its_own_staff_on_top():
+    melody = (q(72, 0), q(74, 1))
+    score = build_score((q(C4, 0), q(C3, 0)), tempo_bpm=90, melody=melody)
+    top, treble, bass = score.parts
+
+    assert pitches_in(top) == [72, 74]
+    assert pitches_in(treble) == [C4]
+    assert pitches_in(bass) == [C3]
+
+
+def test_melody_only_score_is_allowed():
+    score = build_score((), tempo_bpm=90, melody=(q(72, 0),))
+
+    assert len(score.parts) == 3
+
+
 def test_overlapping_notes_do_not_create_tie_fragments():
     # 길게 누른 도 위에 미, 솔이 차례로 들어오는 경우
     notes = (q(C4, 0, length=3), q(E4, 1), q(G4, 2))

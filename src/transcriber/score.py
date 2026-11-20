@@ -29,22 +29,31 @@ def build_score(
     tempo_bpm: float,
     info: ScoreInfo = ScoreInfo(),
     time_signature: str = DEFAULT_TIME_SIGNATURE,
+    melody: tuple[QuantizedNote, ...] = (),
 ) -> stream.Score:
-    """음 목록으로 2단(오른손/왼손) 피아노 악보를 만든다."""
-    if not notes:
+    """피아노 2단(오른손/왼손) 악보를 만든다. melody가 있으면 맨 위에 멜로디 단을 더한다."""
+    if not notes and not melody:
         raise ValueError("악보로 만들 음이 없습니다.")
     if tempo_bpm <= 0:
         raise ValueError(f"템포는 0보다 커야 합니다: {tempo_bpm}")
 
-    total_beats = max(n.start_beats + n.duration_beats for n in notes)
+    total_beats = max(n.start_beats + n.duration_beats for n in notes + melody)
     right_hand = tuple(n for n in notes if n.pitch >= MIDDLE_C)
     left_hand = tuple(n for n in notes if n.pitch < MIDDLE_C)
 
+    parts = [
+        _build_part(right_hand, clef.TrebleClef(), time_signature, total_beats),
+        _build_part(left_hand, clef.BassClef(), time_signature, total_beats),
+    ]
+    if melody:
+        melody_part = _build_part(melody, clef.TrebleClef(), time_signature, total_beats)
+        melody_part.partName = "멜로디"
+        parts.insert(0, melody_part)
+    parts[0].insert(0, tempo.MetronomeMark(number=round(tempo_bpm)))
+
     score = stream.Score()
-    treble = _build_part(right_hand, clef.TrebleClef(), time_signature, total_beats)
-    treble.insert(0, tempo.MetronomeMark(number=round(tempo_bpm)))
-    score.insert(0, treble)
-    score.insert(0, _build_part(left_hand, clef.BassClef(), time_signature, total_beats))
+    for part in parts:
+        score.insert(0, part)
 
     song_key = _resolve_key(score, info.key_name)
     for part in score.parts:
