@@ -124,6 +124,86 @@ def test_main_with_audio_option(score_file, tmp_path, capsys):
     assert "song.wav" in capsys.readouterr().out
 
 
+MEASURE_PITCHES = (60, 62, 64, 65, 67, 69)  # 1~6마디에 온음표 하나씩: 도 레 미 파 솔 라
+
+
+def write_measures_score(path, add_marks):
+    """마디마다 다른 음 하나인 악보를 만든다. 연주 순서를 마디 번호로 확인하기 위함."""
+    from music21 import meter, note, stream
+
+    part = stream.Part()
+    measures = []
+    for number, pitch in enumerate(MEASURE_PITCHES, start=1):
+        measure = stream.Measure(number=number)
+        if number == 1:
+            measure.insert(0, meter.TimeSignature("4/4"))
+        measure.append(note.Note(pitch, quarterLength=4))
+        measures.append(measure)
+        part.append(measure)
+    add_marks(part, measures)
+    score = stream.Score()
+    score.insert(0, part)
+    return Path(score.write("musicxml", fp=str(path)))
+
+
+def played_measures(midi_path):
+    midi = pretty_midi.PrettyMIDI(str(midi_path))
+    notes = sorted((n for inst in midi.instruments for n in inst.notes), key=lambda n: n.start)
+    return [MEASURE_PITCHES.index(n.pitch) + 1 for n in notes]
+
+
+def test_repeat_signs_play_twice(tmp_path):
+    from music21 import bar
+
+    def marks(part, ms):
+        ms[0].leftBarline = bar.Repeat(direction="start")
+        ms[1].rightBarline = bar.Repeat(direction="end")
+
+    score_path = write_measures_score(tmp_path / "repeat.musicxml", marks)
+
+    assert played_measures(score_to_midi(score_path, tmp_path)) == [1, 2, 1, 2, 3, 4, 5, 6]
+
+
+def test_first_and_second_endings(tmp_path):
+    from music21 import bar, spanner
+
+    def marks(part, ms):
+        ms[0].leftBarline = bar.Repeat(direction="start")
+        ms[2].rightBarline = bar.Repeat(direction="end")
+        part.insert(0, spanner.RepeatBracket(ms[2], number=1))
+        part.insert(0, spanner.RepeatBracket(ms[3], number=2))
+
+    score_path = write_measures_score(tmp_path / "volta.musicxml", marks)
+
+    assert played_measures(score_to_midi(score_path, tmp_path)) == [1, 2, 3, 1, 2, 4, 5, 6]
+
+
+def test_dal_segno_al_coda(tmp_path):
+    from music21 import repeat
+
+    def marks(part, ms):
+        ms[1].insert(0, repeat.Segno())
+        ms[2].insert(3.99, repeat.Coda("To Coda"))
+        ms[3].insert(3.99, repeat.DalSegnoAlCoda())
+        ms[4].insert(0, repeat.Coda())
+
+    score_path = write_measures_score(tmp_path / "ds.musicxml", marks)
+
+    assert played_measures(score_to_midi(score_path, tmp_path)) == [1, 2, 3, 4, 2, 3, 5, 6]
+
+
+def test_dal_segno_without_segno_sign_raises_clear_error(tmp_path):
+    from music21 import repeat
+
+    def marks(part, ms):
+        ms[2].insert(3.99, repeat.DalSegnoAlFine())
+
+    score_path = write_measures_score(tmp_path / "broken_ds.musicxml", marks)
+
+    with pytest.raises(ScoreLoadError, match="반복 기호가 잘못"):
+        score_to_midi(score_path, tmp_path)
+
+
 def test_missing_score_raises_clear_error(tmp_path):
     with pytest.raises(ScoreLoadError, match="찾을 수 없습니다"):
         score_to_midi(tmp_path / "없음.musicxml", tmp_path)

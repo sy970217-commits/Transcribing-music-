@@ -11,7 +11,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from music21 import converter, stream
+from music21 import converter, repeat, stream
 
 SCORE_EXTENSIONS = frozenset({".musicxml", ".xml", ".mxl"})
 DEFAULT_OUTPUT_DIR = Path("output")
@@ -86,12 +86,22 @@ def load_score(path: str | Path) -> stream.Score:
 
 
 def score_to_midi(score_path: str | Path, output_dir: str | Path = DEFAULT_OUTPUT_DIR) -> Path:
-    """악보 파일을 MIDI 파일로 바꿔 저장한다. 템포 표시(♩=90 등)도 반영된다."""
+    """악보 파일을 MIDI 파일로 바꿔 저장한다.
+
+    템포 표시(♩=90 등)가 반영되고, 도돌이표·1/2번 괄호·D.C.·D.S.·코다·Fine은
+    악보에 적힌 순서대로 펼쳐서 연주된다.
+    """
     source = Path(score_path)
     score = load_score(source)
     midi_path = Path(output_dir) / f"{source.stem}.mid"
     midi_path.parent.mkdir(parents=True, exist_ok=True)
-    score.write("midi", fp=str(midi_path))
+    try:
+        score.write("midi", fp=str(midi_path))
+    except repeat.ExpanderException as error:
+        raise ScoreLoadError(
+            f"반복 기호가 잘못되어 있어 연주 순서를 정할 수 없어요: {source}. "
+            "도돌이표 짝, D.S.의 𝄋 표시, To Coda와 코다 𝄌 표시가 모두 있는지 확인해 주세요."
+        ) from error
     return midi_path
 
 
