@@ -34,6 +34,15 @@ def test_score_becomes_midi_with_same_notes(score_file, tmp_path):
     assert all_notes(midi_path) == [(0.0, 48), (0.0, 64), (0.0, 72), (0.5, 74), (1.0, 76)]
 
 
+def test_melody_plays_as_choir_and_piano_as_piano(score_file, tmp_path):
+    midi = pretty_midi.PrettyMIDI(str(score_to_midi(score_file, tmp_path)))
+
+    programs = {inst.program for inst in midi.instruments}
+    melody_track = next(inst for inst in midi.instruments if any(n.pitch == 74 for n in inst.notes))
+    assert melody_track.program == 52  # Choir Aahs
+    assert programs == {0, 52}
+
+
 def test_tempo_mark_is_kept(score_file, tmp_path):
     midi = pretty_midi.PrettyMIDI(str(score_to_midi(score_file, tmp_path)))
 

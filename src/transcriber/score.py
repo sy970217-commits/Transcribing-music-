@@ -6,7 +6,18 @@ from dataclasses import dataclass
 from fractions import Fraction
 from pathlib import Path
 
-from music21 import chord, clef, expressions, key, metadata, meter, note, stream, tempo
+from music21 import (
+    chord,
+    clef,
+    expressions,
+    instrument,
+    key,
+    metadata,
+    meter,
+    note,
+    stream,
+    tempo,
+)
 
 from transcriber.lyrics import attach_lyrics
 from transcriber.rhythm import QuantizedNote
@@ -63,8 +74,12 @@ def build_score(
         _build_part(right_hand, clef.TrebleClef(), time_signature, total_beats),
         _build_part(left_hand, clef.BassClef(), time_signature, total_beats),
     ]
+    for piano_part in parts:
+        piano_part.insert(0, instrument.Piano())
     if melody:
         melody_part = _build_part(melody, clef.TrebleClef(), time_signature, total_beats)
+        # 노래 멜로디는 합창 "아~" 소리(General MIDI 52번)로 연주한다
+        melody_part.insert(0, instrument.Choir())
         melody_part.partName = "멜로디"
         attach_lyrics(melody_part, info.lyrics)
         parts.insert(0, melody_part)
