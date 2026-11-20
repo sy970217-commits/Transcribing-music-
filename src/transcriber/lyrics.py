@@ -2,8 +2,10 @@
 
 가사 파일 쓰는 법:
 - 한글은 한 글자가 한 음표에 붙는다. 띄어쓰기와 줄바꿈은 자유롭게 해도 된다.
-- 한 글자를 여러 음표에 걸쳐 길게 부르는 곳에는 "-"(또는 "ㅡ")를 음표 수만큼 넣는다.
-  예: "흔들리는- 순간" → 는을 두 음표에 걸쳐 부름
+- "ㅡ"(또는 "—", "–")는 앞 음의 연장 표시다. 음표를 차지하지 않으므로 무시한다.
+  예: "흔들리는ㅡ 순간" → 는을 길게 부르고, 다음 음표에는 "순"이 붙음
+- 한 글자를 다른 음표로 옮겨 가며 이어 부르는 곳(이음줄)에는 "-"를 음표 수만큼 넣는다.
+  예: "흔들리는- 순간" → 다음 음표 하나도 "는"으로 부름
 - 마침표, 쉼표 같은 문장 부호는 무시한다.
 """
 
@@ -11,7 +13,8 @@ from pathlib import Path
 
 from music21 import stream
 
-MELISMA_MARKS = frozenset({"-", "_", "—", "–", "ㅡ"})  # 앞 글자를 이어서 부르는 표시
+MELISMA_MARKS = frozenset({"-", "_"})  # 다음 음표에서도 앞 글자를 이어 부르는 표시(음표 하나 차지)
+EXTENSION_MARKS = frozenset({"ㅡ", "—", "–"})  # 앞 음의 연장 표시(음표를 차지하지 않음)
 HOLD = ""  # 음표는 있지만 새 글자가 없는 자리
 
 
@@ -33,6 +36,9 @@ def parse_lyrics(text: str) -> tuple[str, ...]:
                 syllables.extend(_flush(latin_run))
                 latin_run = ""
                 syllables.append(HOLD)
+            elif char in EXTENSION_MARKS:
+                syllables.extend(_flush(latin_run))
+                latin_run = ""
             elif char.isalnum():
                 latin_run += char
         syllables.extend(_flush(latin_run))
