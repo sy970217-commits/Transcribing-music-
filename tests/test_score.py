@@ -138,6 +138,30 @@ def test_marks_key_change_in_the_middle():
     assert description.endswith("조표 ♯ 3개")
 
 
+def test_key_change_lands_on_exact_measure():
+    # 19마디부터 조가 바뀜 (4마디 단위 경계가 아님)
+    notes = repeat_scale(G_MAJOR_SCALE, 18) + repeat_scale(A_MAJOR_SCALE, 14, start_beat=72)
+
+    assert "19마디부터" in key_name_of(build_score(notes, tempo_bpm=90))
+
+
+BOTH_KEYS_TONES = (69, 71, 74, 76, 78)  # 라 시 레 미 파#: 사장조와 가장조에 모두 있는 음
+
+
+def test_key_change_goes_where_melody_starts_after_bridge():
+    # 1~16마디 G장조, 17~18마디는 두 조 모두에 맞는 다리, 19마디부터 A장조 노래 시작
+    piano = (
+        repeat_scale(G_MAJOR_SCALE, 16)
+        + repeat_scale(BOTH_KEYS_TONES, 2, start_beat=64)
+        + repeat_scale(A_MAJOR_SCALE, 14, start_beat=72)
+    )
+    melody = tuple(q(81, 72 + beat) for beat in range(8))
+
+    score = build_score(piano, tempo_bpm=90, melody=melody)
+
+    assert "19마디부터" in key_name_of(score)
+
+
 def test_one_misread_section_does_not_delay_key_change():
     # 가을꽃에서 본 경우: 바뀐 조(♯3) 구간 중간에 한 구간만 ♯4(E장조)로 읽힘
     e_major_scale = (76, 78, 80, 81, 83, 85, 87, 88)

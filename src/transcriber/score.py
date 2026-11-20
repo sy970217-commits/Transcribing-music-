@@ -16,6 +16,7 @@ DEFAULT_TIME_SIGNATURE = "4/4"
 KEY_WINDOW_MEASURES = 4  # 조성을 이 마디 수씩 끊어서 찾는다
 MIN_KEY_RUN_WINDOWS = 3  # 같은 조표가 3창(12마디) 이상 이어져야 조바꿈으로 인정
 MIN_NOTES_FOR_KEY = 8  # 한 창에 음이 이보다 적으면 조성을 판단하지 않는다
+KEY_FIT_TOLERANCE = 0.01  # 가장 잘 맞는 위치와 1% 안쪽 차이면 "거의 똑같이 잘 맞음"
 
 
 @dataclass(frozen=True)
@@ -72,7 +73,7 @@ def build_score(
         score.insert(0, part)
 
     bar_beats = meter.TimeSignature(time_signature).barDuration.quarterLength
-    for start, song_key in _resolve_keys(notes + melody, bar_beats, info.key_name):
+    for start, song_key in _resolve_keys(notes + melody, bar_beats, info.key_name, melody):
         for part in score.parts:
             part.insert(start, key.Key(song_key.tonic, song_key.mode))
     score.metadata = _build_metadata(info)
@@ -116,7 +117,10 @@ def _parse_key(key_name: str) -> key.Key:
 
 
 def _resolve_keys(
-    notes: tuple[QuantizedNote, ...], bar_beats, key_name: str | None
+    notes: tuple[QuantizedNote, ...],
+    bar_beats,
+    key_name: str | None,
+    melody: tuple[QuantizedNote, ...] = (),
 ) -> list[tuple[Fraction, key.Key]]:
     """곡의 조성과, 중간에 조가 바뀌는 위치를 찾는다. [(시작 박, 조성), ...]
 
@@ -128,6 +132,7 @@ def _resolve_keys(
 
     window = Fraction(bar_beats) * KEY_WINDOW_MEASURES
     total = max(n.start_beats + n.duration_beats for n in notes)
+    phrase_starts = _phrase_starts(melody)
     window_count = math.ceil(total / window)
     window_keys = [
         _analyze_key(tuple(n for n in notes if i * window <= n.start_beats < (i + 1) * window))
@@ -137,11 +142,72 @@ def _resolve_keys(
     if not change_windows:
         return [(Fraction(0), _analyze_key(notes, min_notes=1))]
 
-    boundaries = [i * window for i in change_windows] + [total + 1]
+    rough = _keys_between([i * window for i in change_windows], notes, total)
+    refined_starts = [Fraction(0)]
+    for (_, old_key), (start, new_key) in zip(rough, rough[1:]):
+        refined = _refine_change(notes, phrase_starts, old_key, new_key, start, Fraction(bar_beats))
+        refined_starts.append(max(refined, refined_starts[-1] + Fraction(bar_beats)))
+    return _keys_between(refined_starts, notes, total)
+
+
+def _keys_between(starts: list, notes: tuple[QuantizedNote, ...], total) -> list:
+    boundaries = list(starts) + [total + 1]
     return [
         (start, _analyze_key(tuple(n for n in notes if start <= n.start_beats < end), min_notes=1))
         for start, end in zip(boundaries, boundaries[1:])
     ]
+
+
+def _refine_change(
+    notes: tuple[QuantizedNote, ...],
+    phrase_starts: frozenset,
+    old_key: key.Key,
+    new_key: key.Key,
+    rough_start: Fraction,
+    bar_beats: Fraction,
+) -> Fraction:
+    """4마디 단위로 찾은 조바꿈 위치를 마디 단위로 다듬는다.
+
+    앞쪽 음은 옛 조에, 뒤쪽 음은 새 조에 가장 잘 맞는 마디를 고른다. 거의 똑같이
+    잘 맞는 마디가 여럿이면(조바꿈 직전의 다리 마디들), 멜로디 프레이즈가 시작되는
+    마디를, 없으면 가장 늦은 마디를 고른다. 새 조표는 새 단락 첫머리에 붙기 때문이다.
+    """
+    span = bar_beats * KEY_WINDOW_MEASURES
+    candidates = [
+        rough_start + bar_beats * step
+        for step in range(-KEY_WINDOW_MEASURES, KEY_WINDOW_MEASURES + 1)
+        if rough_start + bar_beats * step > 0
+    ]
+    nearby = tuple(n for n in notes if rough_start - 2 * span <= n.start_beats < rough_start + 2 * span)
+    old_scale, new_scale = _scale_pitch_classes(old_key), _scale_pitch_classes(new_key)
+
+    def fit(boundary: Fraction) -> Fraction:
+        return sum(
+            (n.duration_beats for n in nearby
+             if (n.pitch % 12) in (old_scale if n.start_beats < boundary else new_scale)),
+            Fraction(0),
+        )
+
+    scores = {c: fit(c) for c in candidates}
+    best = max(scores.values())
+    near_best = [c for c, s in scores.items() if s >= best * (1 - KEY_FIT_TOLERANCE)]
+    at_phrase = [c for c in near_best if any(c <= p < c + bar_beats for p in phrase_starts)]
+    return max(at_phrase or near_best)
+
+
+def _scale_pitch_classes(song_key: key.Key) -> frozenset:
+    return frozenset(p.pitchClass for p in song_key.getScale().getPitches())
+
+
+def _phrase_starts(melody: tuple[QuantizedNote, ...]) -> frozenset:
+    """멜로디가 쉼표(1박 이상) 뒤에 다시 시작하는 박들."""
+    starts = []
+    previous_end = None
+    for n in sorted(melody, key=lambda n: n.start_beats):
+        if previous_end is None or n.start_beats - previous_end >= 1:
+            starts.append(n.start_beats)
+        previous_end = max(previous_end or 0, n.start_beats + n.duration_beats)
+    return frozenset(starts)
 
 
 def _analyze_key(notes: tuple[QuantizedNote, ...], min_notes: int = MIN_NOTES_FOR_KEY):
