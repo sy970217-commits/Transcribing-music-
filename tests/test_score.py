@@ -44,6 +44,23 @@ def test_notes_at_same_time_become_a_chord():
     assert pitches_in(score.parts[0]) == [(C4, E4, G4)]
 
 
+def test_overlapping_notes_do_not_create_tie_fragments():
+    # 길게 누른 도 위에 미, 솔이 차례로 들어오는 경우
+    notes = (q(C4, 0, length=3), q(E4, 1), q(G4, 2))
+    part = build_score(notes, tempo_bpm=120).parts[0]
+
+    elements = list(part.recurse().notes)
+    assert pitches_in(part) == [C4, E4, G4]
+    assert all(element.tie is None for element in elements)
+
+
+def test_notes_starting_together_share_shortest_gap():
+    notes = (q(C4, 0, length=2), q(E4, 0, length=1), q(G4, 1))
+    first = list(build_score(notes, tempo_bpm=120).parts[0].recurse().notes)[0]
+
+    assert first.quarterLength == 1
+
+
 def test_saved_musicxml_can_be_read_back(tmp_path):
     melody = (q(C4, 0), q(E4, 1), q(G4, 2, length=Fraction(1, 2)))
     path = save_musicxml(build_score(melody, tempo_bpm=90), tmp_path / "out" / "song.musicxml")

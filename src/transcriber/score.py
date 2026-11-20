@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 from pathlib import Path
 
-from music21 import clef, key, metadata, meter, note, stream, tempo
+from music21 import chord, clef, key, metadata, meter, note, stream, tempo
 
 from transcriber.rhythm import QuantizedNote
 
@@ -100,20 +100,41 @@ def _build_part(
     time_signature: str,
     total_beats,
 ) -> stream.Part:
-    raw = stream.Part()
-    for quantized in hand_notes:
-        raw.insert(quantized.start_beats, _to_music21_note(quantized))
-    if not hand_notes:
-        raw.insert(0, note.Rest(quarterLength=total_beats))
-
-    # 같은 시간에 울리는 음을 화음으로 묶는다
-    part = raw.chordify() if hand_notes else raw
+    part = stream.Part()
     part.insert(0, part_clef)
     part.insert(0, meter.TimeSignature(time_signature))
+    if not hand_notes:
+        part.insert(0, note.Rest(quarterLength=total_beats))
+        return part
+
+    for start, duration, group in _group_by_start(hand_notes):
+        part.insert(start, _to_music21_element(group, duration))
+    part.makeRests(fillGaps=True, inPlace=True)
     return part
 
 
-def _to_music21_note(quantized: QuantizedNote) -> note.Note:
-    music21_note = note.Note(quantized.pitch, quarterLength=quantized.duration_beats)
-    music21_note.volume.velocity = quantized.velocity
-    return music21_note
+def _group_by_start(hand_notes: tuple[QuantizedNote, ...]):
+    """같은 박에 시작하는 음을 한 묶음(화음)으로 모은다.
+
+    묶음의 길이는 다음 묶음이 시작할 때까지로 자른다. 음이 겹쳐 생기는
+    잘게 쪼개진 붙임줄을 막아 악보를 깔끔하게 한다.
+    """
+    starts = sorted({n.start_beats for n in hand_notes})
+    next_starts = starts[1:] + [None]
+    for start, next_start in zip(starts, next_starts):
+        group = tuple(n for n in hand_notes if n.start_beats == start)
+        duration = max(n.duration_beats for n in group)
+        if next_start is not None:
+            duration = min(duration, next_start - start)
+        yield start, duration, group
+
+
+def _to_music21_element(group: tuple[QuantizedNote, ...], duration) -> note.NotRest:
+    pitches = sorted({n.pitch for n in group})
+    element = (
+        note.Note(pitches[0], quarterLength=duration)
+        if len(pitches) == 1
+        else chord.Chord(pitches, quarterLength=duration)
+    )
+    element.volume.velocity = max(n.velocity for n in group)
+    return element

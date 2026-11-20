@@ -9,6 +9,9 @@ from basic_pitch.inference import predict
 from transcriber.audio_io import validate_audio_path
 
 MAX_VELOCITY = 127
+# 음이 계속 울리고 있다고 볼 기준. 기본값 0.3보다 높여 잡음 음을 줄인다.
+# (가을꽃 원본 MIDI와 비교: 정확도 77% → 84%)
+FRAME_THRESHOLD = 0.4
 
 
 class PitchDetectionError(Exception):
@@ -38,7 +41,9 @@ def detect_notes(audio_path: str | Path) -> PitchResult:
     file_path = validate_audio_path(audio_path)
 
     try:
-        _, midi, note_events = predict(file_path, ICASSP_2022_MODEL_PATH)
+        _, midi, note_events = predict(
+            file_path, ICASSP_2022_MODEL_PATH, frame_threshold=FRAME_THRESHOLD
+        )
     except Exception as error:
         raise PitchDetectionError(f"음을 찾지 못했습니다: {file_path} ({error})") from error
 
