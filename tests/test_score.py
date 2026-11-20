@@ -4,7 +4,7 @@ import pytest
 from music21 import chord, converter, note, tempo
 
 from transcriber.rhythm import QuantizedNote
-from transcriber.score import build_score, save_musicxml
+from transcriber.score import ScoreInfo, build_score, key_name_of, save_musicxml
 
 C4, E4, G4, C3 = 60, 64, 67, 48
 
@@ -52,6 +52,42 @@ def test_saved_musicxml_can_be_read_back(tmp_path):
     marks = list(loaded.recurse().getElementsByClass(tempo.MetronomeMark))
     assert pitches_in(loaded.parts[0]) == [C4, E4, G4]
     assert marks[0].number == 90
+
+
+G_MAJOR_SCALE = (67, 69, 71, 72, 74, 76, 78, 79)  # 솔 라 시 도 레 미 파# 솔
+
+
+def g_major_melody():
+    return tuple(q(p, i) for i, p in enumerate(G_MAJOR_SCALE))
+
+
+def test_detects_key_signature_automatically():
+    score = build_score(g_major_melody(), tempo_bpm=90)
+
+    # 사장조와 마단조는 조표가 같다(♯ 1개). 악보에 보이는 건 조표다.
+    assert "조표 ♯ 1개" in key_name_of(score)
+
+
+def test_uses_given_key():
+    score = build_score(g_major_melody(), tempo_bpm=90, info=ScoreInfo(key_name="D"))
+
+    assert key_name_of(score) == "D major, 조표 ♯ 2개"
+
+
+def test_unknown_key_raises_clear_error():
+    with pytest.raises(ValueError, match="알 수 없는 조성"):
+        build_score(g_major_melody(), tempo_bpm=90, info=ScoreInfo(key_name="H#q"))
+
+
+def test_title_and_credits_are_saved(tmp_path):
+    info = ScoreInfo(title="가을꽃", composer="작곡가", lyricist="작사가")
+    path = save_musicxml(build_score(g_major_melody(), 90, info), tmp_path / "song.musicxml")
+
+    xml = path.read_text(encoding="utf-8")
+    assert "<work-title>가을꽃</work-title>" in xml
+    assert '<creator type="composer">작곡가</creator>' in xml
+    assert '<creator type="lyricist">작사가</creator>' in xml
+    assert "<fifths>1</fifths>" in xml  # 조표 ♯ 1개
 
 
 def test_empty_notes_raise_clear_error():

@@ -43,6 +43,22 @@ def test_main_returns_ok_and_prints_paths(melody_wav, tmp_path, capsys):
     assert "melody.musicxml" in capsys.readouterr().out
 
 
+def test_main_writes_title_and_composer(melody_wav, tmp_path):
+    args = ["--output-dir", str(tmp_path), "--tempo", "120", "--title", "시험곡", "--composer", "홍길동"]
+    exit_code = main([str(melody_wav), *args])
+
+    xml = (tmp_path / "melody.musicxml").read_text(encoding="utf-8")
+    assert exit_code == EXIT_OK
+    assert "<work-title>시험곡</work-title>" in xml
+    assert '<creator type="composer">홍길동</creator>' in xml
+
+
+def test_title_defaults_to_file_name(melody_wav, tmp_path):
+    result = transcribe_file(melody_wav, tmp_path, tempo_bpm=120)
+
+    assert "<work-title>melody</work-title>" in result.musicxml_path.read_text(encoding="utf-8")
+
+
 def test_main_reports_missing_file(tmp_path, capsys):
     exit_code = main([str(tmp_path / "nope.mp3")])
 
