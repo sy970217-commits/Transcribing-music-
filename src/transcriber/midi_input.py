@@ -10,7 +10,13 @@ from pathlib import Path
 
 import pretty_midi
 
-from transcriber.rhythm import DEFAULT_SUBDIVISION, DEFAULT_TEMPO_BPM, QuantizedNote
+from transcriber.rhythm import (
+    DEFAULT_SUBDIVISION,
+    DEFAULT_TEMPO_BPM,
+    BeatNote,
+    QuantizedNote,
+    quantize_beat_notes,
+)
 from transcriber.tempo_marks import TempoChange
 
 MIDI_EXTENSIONS = frozenset({".mid", ".midi"})
@@ -51,20 +57,25 @@ def read_midi(path: str | Path, subdivision: int = DEFAULT_SUBDIVISION) -> MidiS
         raise MidiLoadError(f"MIDI 파일에 음이 없습니다: {file_path}")
 
     melody_track = _find_melody_track(tracks)
-    accompaniment = [
-        _quantize(midi, n, subdivision)
-        for track in tracks
-        if track is not melody_track
-        for n in track.notes
-    ]
-    melody = (
-        [_quantize(midi, n, subdivision) for n in melody_track.notes] if melody_track else []
+    accompaniment = tuple(
+        _to_beats(midi, n) for track in tracks if track is not melody_track for n in track.notes
     )
+    melody = tuple(_to_beats(midi, n) for n in melody_track.notes) if melody_track else ()
+    # 멜로디와 반주는 리듬이 다를 수 있어(예: 노래는 8분음표, 반주는 셋잇단음표) 따로 맞춘다
     return MidiSong(
         tempo_bpm=_first_tempo(midi),
-        melody=_sorted(melody),
-        accompaniment=_sorted(accompaniment),
+        melody=quantize_beat_notes(melody, subdivision),
+        accompaniment=quantize_beat_notes(accompaniment, subdivision),
         tempo_changes=_tempo_changes(midi, subdivision),
+    )
+
+
+def _to_beats(midi: pretty_midi.PrettyMIDI, note: pretty_midi.Note) -> BeatNote:
+    return BeatNote(
+        pitch=note.pitch,
+        velocity=note.velocity,
+        start_beats=midi.time_to_tick(note.start) / midi.resolution,
+        end_beats=midi.time_to_tick(note.end) / midi.resolution,
     )
 
 
@@ -99,18 +110,3 @@ def _first_tempo(midi: pretty_midi.PrettyMIDI) -> float:
 
 def _snap_beats(beats: float, subdivision: int) -> Fraction:
     return Fraction(round(beats * subdivision), subdivision)
-
-
-def _quantize(midi: pretty_midi.PrettyMIDI, note: pretty_midi.Note, subdivision: int) -> QuantizedNote:
-    start = _snap_beats(midi.time_to_tick(note.start) / midi.resolution, subdivision)
-    end = _snap_beats(midi.time_to_tick(note.end) / midi.resolution, subdivision)
-    return QuantizedNote(
-        pitch=note.pitch,
-        velocity=note.velocity,
-        start_beats=start,
-        duration_beats=max(end - start, Fraction(1, subdivision)),
-    )
-
-
-def _sorted(notes: list[QuantizedNote]) -> tuple[QuantizedNote, ...]:
-    return tuple(sorted(notes, key=lambda n: (n.start_beats, n.pitch)))

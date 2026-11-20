@@ -44,6 +44,36 @@ def test_result_is_sorted_by_start_time():
     assert [n.pitch for n in result] == [60, 64]
 
 
+def test_triplet_eighths_snap_to_thirds_of_a_beat():
+    # 120 BPM에서 1박 = 0.5초, 셋잇단음표 간격 = 1/6초
+    third = 0.5 / 3
+    notes = tuple(make_note(i * third + 0.005, (i + 1) * third, pitch=60 + i) for i in range(3))
+
+    result = quantize_notes(notes, TEMPO_120)
+
+    assert [n.start_beats for n in result] == [0, Fraction(1, 3), Fraction(2, 3)]
+    assert all(n.duration_beats == Fraction(1, 3) for n in result)
+
+
+def test_sixteenths_stay_sixteenths():
+    quarter_of_beat = 0.5 / 4
+    notes = tuple(make_note(i * quarter_of_beat, (i + 1) * quarter_of_beat, pitch=60 + i) for i in range(4))
+
+    result = quantize_notes(notes, TEMPO_120)
+
+    assert [n.start_beats for n in result] == [0, Fraction(1, 4), Fraction(1, 2), Fraction(3, 4)]
+
+
+def test_triplets_and_sixteenths_in_different_beats():
+    third, sixteenth = 0.5 / 3, 0.5 / 4
+    triplets = tuple(make_note(i * third, (i + 1) * third) for i in range(3))
+    sixteenths = tuple(make_note(0.5 + i * sixteenth, 0.5 + (i + 1) * sixteenth) for i in range(4))
+
+    starts = [n.start_beats for n in quantize_notes(triplets + sixteenths, TEMPO_120)]
+
+    assert starts == [0, Fraction(1, 3), Fraction(2, 3), 1, Fraction(5, 4), Fraction(3, 2), Fraction(7, 4)]
+
+
 def test_rejects_zero_tempo():
     with pytest.raises(ValueError, match="템포"):
         quantize_notes((make_note(0.0, 0.5),), 0)
