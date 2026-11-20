@@ -1,0 +1,19 @@
+# 파이썬 작업 공간과 캐시
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# 생성된 결과물
+output/
+
+# 음원 파일 (tests/fixtures 안의 짧은 테스트 음원만 예외)
+*.mp3
+*.wav
+*.flac
+*.m4a
+*.ogg
+!tests/fixtures/*
+
+# macOS
+.DS_Store
