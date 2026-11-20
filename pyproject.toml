@@ -11,6 +11,9 @@ dependencies = [
     "soundfile>=0.12",
 ]
 
+[project.scripts]
+transcribe = "transcriber.cli:main"
+
 [dependency-groups]
 dev = ["pytest>=8"]
 
