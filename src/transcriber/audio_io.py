@@ -26,14 +26,20 @@ class AudioData:
         return len(self.samples) / self.sample_rate
 
 
-def load_audio(path: str | Path, sample_rate: int = DEFAULT_SAMPLE_RATE) -> AudioData:
-    """음원 파일을 모노로 불러와 지정한 샘플레이트로 맞춘다."""
+def validate_audio_path(path: str | Path) -> Path:
+    """파일이 있고 지원하는 음원 형식인지 확인한다."""
     file_path = Path(path)
     if not file_path.is_file():
         raise AudioLoadError(f"파일을 찾을 수 없습니다: {file_path}")
     if file_path.suffix.lower() not in SUPPORTED_EXTENSIONS:
         supported = ", ".join(sorted(SUPPORTED_EXTENSIONS))
         raise AudioLoadError(f"지원하지 않는 형식입니다: {file_path.suffix} (지원: {supported})")
+    return file_path
+
+
+def load_audio(path: str | Path, sample_rate: int = DEFAULT_SAMPLE_RATE) -> AudioData:
+    """음원 파일을 모노로 불러와 지정한 샘플레이트로 맞춘다."""
+    file_path = validate_audio_path(path)
 
     try:
         samples, loaded_rate = librosa.load(file_path, sr=sample_rate, mono=True)
