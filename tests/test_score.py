@@ -54,6 +54,20 @@ def test_melody_gets_its_own_staff_on_top():
     assert pitches_in(bass) == [C3]
 
 
+def test_lyrics_are_written_under_melody(tmp_path):
+    melody = (q(72, 0), q(74, 1), q(76, 2))
+    score = build_score((), tempo_bpm=90, info=ScoreInfo(lyrics=("가", "", "을")), melody=melody)
+
+    xml = save_musicxml(score, tmp_path / "song.musicxml").read_text(encoding="utf-8")
+    assert "<text>가</text>" in xml
+    assert "<text>을</text>" in xml
+
+
+def test_lyrics_without_melody_raise_clear_error():
+    with pytest.raises(ValueError, match="멜로디 단이 필요"):
+        build_score((q(C4, 0),), tempo_bpm=90, info=ScoreInfo(lyrics=("가",)))
+
+
 def test_melody_only_score_is_allowed():
     score = build_score((), tempo_bpm=90, melody=(q(72, 0),))
 

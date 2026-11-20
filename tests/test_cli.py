@@ -113,6 +113,54 @@ def test_main_warns_when_no_voice_found(melody_wav, tmp_path, monkeypatch, capsy
     assert "목소리를 찾지 못해" in capsys.readouterr().out
 
 
+def write_voice_and_piano_midi(path, melody_pitches):
+    import pretty_midi
+
+    midi = pretty_midi.PrettyMIDI(initial_tempo=120)
+    piano, voice = pretty_midi.Instrument(program=0), pretty_midi.Instrument(program=52)
+    piano.notes.append(pretty_midi.Note(velocity=80, pitch=48, start=0, end=1))
+    for i, pitch in enumerate(melody_pitches):
+        voice.notes.append(pretty_midi.Note(velocity=80, pitch=pitch, start=i * 0.5, end=(i + 1) * 0.5))
+    midi.instruments.extend([piano, voice])
+    midi.write(str(path))
+    return path
+
+
+def test_main_adds_lyrics_from_file(tmp_path, capsys):
+    song = write_voice_and_piano_midi(tmp_path / "song.mid", [72, 74, 76])
+    lyrics = tmp_path / "가사.txt"
+    lyrics.write_text("가을-", encoding="utf-8")
+
+    exit_code = main([str(song), "--output-dir", str(tmp_path), "--lyrics", str(lyrics)])
+
+    xml = (tmp_path / "song.musicxml").read_text(encoding="utf-8")
+    assert exit_code == EXIT_OK
+    assert "<text>가</text>" in xml and "<text>을</text>" in xml
+    assert "음절 3개 → 멜로디 음표 3개" in capsys.readouterr().out
+
+
+def test_main_warns_about_left_over_lyrics(tmp_path, capsys):
+    song = write_voice_and_piano_midi(tmp_path / "song.mid", [72, 74])
+    lyrics = tmp_path / "가사.txt"
+    lyrics.write_text("가을 꽃 피네", encoding="utf-8")
+
+    exit_code = main([str(song), "--output-dir", str(tmp_path), "--lyrics", str(lyrics)])
+
+    assert exit_code == EXIT_OK
+    assert "가사 3자가 남았어요" in capsys.readouterr().out
+
+
+def test_main_rejects_lyrics_without_melody(melody_wav, tmp_path, capsys):
+    lyrics = tmp_path / "가사.txt"
+    lyrics.write_text("가을", encoding="utf-8")
+
+    args = [str(melody_wav), "--output-dir", str(tmp_path), "--tempo", "120", "--lyrics", str(lyrics)]
+    exit_code = main(args)
+
+    assert exit_code == EXIT_ERROR
+    assert "멜로디 단이 필요" in capsys.readouterr().err
+
+
 def test_main_reports_missing_file(tmp_path, capsys):
     exit_code = main([str(tmp_path / "nope.mp3")])
 

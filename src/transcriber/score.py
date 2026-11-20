@@ -8,6 +8,7 @@ from pathlib import Path
 
 from music21 import chord, clef, key, metadata, meter, note, stream, tempo
 
+from transcriber.lyrics import attach_lyrics
 from transcriber.rhythm import QuantizedNote
 
 MIDDLE_C = 60  # 가운데 도. 이 음 이상은 오른손(높은음자리표), 아래는 왼손(낮은음자리표)
@@ -28,6 +29,7 @@ class ScoreInfo:
     composer: str = ""
     lyricist: str = ""
     key_name: str | None = None
+    lyrics: tuple[str, ...] = ()  # 멜로디에 붙일 음절. lyrics.parse_lyrics로 만든다
 
 
 def build_score(
@@ -37,9 +39,16 @@ def build_score(
     time_signature: str = DEFAULT_TIME_SIGNATURE,
     melody: tuple[QuantizedNote, ...] = (),
 ) -> stream.Score:
-    """피아노 2단(오른손/왼손) 악보를 만든다. melody가 있으면 맨 위에 멜로디 단을 더한다."""
+    """피아노 2단(오른손/왼손) 악보를 만든다. melody가 있으면 맨 위에 멜로디 단을 더한다.
+
+    info.lyrics(음절 목록)가 있으면 멜로디 음표에 차례로 붙인다.
+    """
     if not notes and not melody:
         raise ValueError("악보로 만들 음이 없습니다.")
+    if info.lyrics and not melody:
+        raise ValueError(
+            "가사를 붙이려면 멜로디 단이 필요해요. MIDI 파일을 넣거나 --vocals를 함께 쓰세요."
+        )
     if tempo_bpm <= 0:
         raise ValueError(f"템포는 0보다 커야 합니다: {tempo_bpm}")
 
@@ -54,6 +63,7 @@ def build_score(
     if melody:
         melody_part = _build_part(melody, clef.TrebleClef(), time_signature, total_beats)
         melody_part.partName = "멜로디"
+        attach_lyrics(melody_part, info.lyrics)
         parts.insert(0, melody_part)
     parts[0].insert(0, tempo.MetronomeMark(number=round(tempo_bpm)))
 

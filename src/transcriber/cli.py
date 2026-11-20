@@ -11,7 +11,8 @@ from pathlib import Path
 from transcriber.audio_io import AudioLoadError, validate_audio_path
 from transcriber.midi_input import MidiLoadError, is_midi_file, read_midi
 from transcriber.pitch import Note, PitchDetectionError, detect_notes, save_midi
-from transcriber.rhythm import estimate_tempo, quantize_notes
+from transcriber.lyrics import LyricsError, read_lyrics_file
+from transcriber.rhythm import QuantizedNote, estimate_tempo, quantize_notes
 from transcriber.score import ScoreInfo, build_score, key_name_of, save_musicxml
 from transcriber.vocal_melody import extract_vocal_parts
 
@@ -30,6 +31,8 @@ class TranscriptionResult:
     note_count: int
     key_name: str
     voice_found: bool | None = None  # --vocals를 쓴 경우에만 True/False
+    melody_note_count: int = 0
+    lyrics_left_over: int = 0  # 멜로디 음표보다 가사 음절이 많아 남은 수
 
 
 def transcribe_file(
@@ -46,8 +49,21 @@ def transcribe_file(
     source = Path(audio_path)
     score_info = info if info.title else replace(info, title=source.stem)
     if is_midi_file(source):
-        return _transcribe_midi(source, Path(output_dir), tempo_bpm, score_info)
-    return _transcribe_audio(source, Path(output_dir), tempo_bpm, score_info, vocals)
+        result = _transcribe_midi(source, Path(output_dir), tempo_bpm, score_info)
+    else:
+        result = _transcribe_audio(source, Path(output_dir), tempo_bpm, score_info, vocals)
+    return _with_lyrics_summary(result, score_info)
+
+
+def _with_lyrics_summary(result: TranscriptionResult, info: ScoreInfo) -> TranscriptionResult:
+    """음표가 모자라 붙이지 못한 가사 음절 수를 결과에 적는다."""
+    left_over = max(0, len(info.lyrics) - result.melody_note_count)
+    return replace(result, lyrics_left_over=left_over)
+
+
+def _melody_note_count(melody: tuple[QuantizedNote, ...]) -> int:
+    """악보에 그려질 멜로디 음표 수(같은 박에 시작하는 음은 한 음표로 묶임)."""
+    return len({n.start_beats for n in melody})
 
 
 def _transcribe_midi(
@@ -64,6 +80,7 @@ def _transcribe_midi(
         tempo_bpm=tempo,
         note_count=len(song.accompaniment) + len(song.melody),
         key_name=key_name_of(score),
+        melody_note_count=_melody_note_count(song.melody),
     )
 
 
@@ -98,6 +115,7 @@ def _transcribe_audio(
         note_count=len(pitch_result.notes) + len(melody_notes),
         key_name=key_name_of(score),
         voice_found=voice_found,
+        melody_note_count=_melody_note_count(melody),
     )
 
 
@@ -131,6 +149,11 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         action="store_true",
         help="사람이 부른 노래 녹음일 때: 목소리를 분리해 맨 위에 멜로디 단을 만듦 (몇 분 걸림)",
     )
+    parser.add_argument(
+        "--lyrics",
+        default=None,
+        help="가사 글 파일(.txt). 멜로디 음표에 한 글자씩 붙임. 길게 부르는 곳은 '-'",
+    )
     return parser.parse_args(argv)
 
 
@@ -143,11 +166,17 @@ def main(argv: list[str] | None = None) -> int:
             composer=args.composer,
             lyricist=args.lyricist,
             key_name=args.key,
+            lyrics=read_lyrics_file(args.lyrics) if args.lyrics else (),
         )
         result = transcribe_file(args.audio, args.output_dir, args.tempo, info, args.vocals)
-    except (AudioLoadError, MidiLoadError, PitchDetectionError, ValueError) as error:
+    except (AudioLoadError, MidiLoadError, LyricsError, PitchDetectionError, ValueError) as error:
         print(f"오류: {error}", file=sys.stderr)
         return EXIT_ERROR
+
+    if args.lyrics:
+        print(f"가사: 음절 {len(info.lyrics)}개 → 멜로디 음표 {result.melody_note_count}개")
+        if result.lyrics_left_over:
+            print(f"알림: 음표가 모자라 가사 {result.lyrics_left_over}자가 남았어요. 가사 파일을 확인해 주세요.")
 
     if result.voice_found is False:
         print(
