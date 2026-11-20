@@ -8,11 +8,12 @@ import sys
 from dataclasses import dataclass, replace
 from pathlib import Path
 
-from transcriber.audio_io import AudioLoadError
+from transcriber.audio_io import AudioLoadError, validate_audio_path
 from transcriber.midi_input import MidiLoadError, is_midi_file, read_midi
-from transcriber.pitch import PitchDetectionError, detect_notes, save_midi
+from transcriber.pitch import Note, PitchDetectionError, detect_notes, save_midi
 from transcriber.rhythm import estimate_tempo, quantize_notes
 from transcriber.score import ScoreInfo, build_score, key_name_of, save_musicxml
+from transcriber.vocal_melody import extract_vocal_parts
 
 DEFAULT_OUTPUT_DIR = Path("output")
 EXIT_OK = 0
@@ -28,6 +29,7 @@ class TranscriptionResult:
     tempo_bpm: float
     note_count: int
     key_name: str
+    voice_found: bool | None = None  # --vocals를 쓴 경우에만 True/False
 
 
 def transcribe_file(
@@ -35,8 +37,9 @@ def transcribe_file(
     output_dir: str | Path = DEFAULT_OUTPUT_DIR,
     tempo_bpm: float | None = None,
     info: ScoreInfo = ScoreInfo(),
+    vocals: bool = False,
 ) -> TranscriptionResult:
-    """음원 또는 MIDI 파일을 악보로 바꾼다."""
+    """음원 또는 MIDI 파일을 악보로 바꾼다. vocals=True면 노래 멜로디 단을 따로 만든다."""
     if tempo_bpm is not None and tempo_bpm <= 0:
         raise ValueError(f"템포는 0보다 커야 합니다: {tempo_bpm}")
 
@@ -44,7 +47,7 @@ def transcribe_file(
     score_info = info if info.title else replace(info, title=source.stem)
     if is_midi_file(source):
         return _transcribe_midi(source, Path(output_dir), tempo_bpm, score_info)
-    return _transcribe_audio(source, Path(output_dir), tempo_bpm, score_info)
+    return _transcribe_audio(source, Path(output_dir), tempo_bpm, score_info, vocals)
 
 
 def _transcribe_midi(
@@ -65,16 +68,26 @@ def _transcribe_midi(
 
 
 def _transcribe_audio(
-    source: Path, target_dir: Path, tempo_bpm: float | None, info: ScoreInfo
+    source: Path, target_dir: Path, tempo_bpm: float | None, info: ScoreInfo, vocals: bool
 ) -> TranscriptionResult:
-    """음원 → 음 찾기 → 박자 정리 → 악보 저장."""
-    pitch_result = detect_notes(source)
-    if not pitch_result.notes:
+    """음원 → (목소리 분리) → 음 찾기 → 박자 정리 → 악보 저장."""
+    validate_audio_path(source)
+    melody_notes: tuple[Note, ...] = ()
+    piano_source = source
+    voice_found = None
+    if vocals:
+        parts = extract_vocal_parts(source, target_dir / f"{source.stem}_stems")
+        voice_found = parts.has_voice
+        melody_notes = parts.melody
+        piano_source = parts.accompaniment_path
+
+    pitch_result = detect_notes(piano_source)
+    if not pitch_result.notes and not melody_notes:
         raise ValueError(f"음원에서 음을 찾지 못했습니다: {source}")
 
     tempo = tempo_bpm if tempo_bpm is not None else estimate_tempo(source)
-    quantized = quantize_notes(pitch_result.notes, tempo)
-    score = build_score(quantized, tempo, info)
+    melody = quantize_notes(melody_notes, tempo)
+    score = build_score(quantize_notes(pitch_result.notes, tempo), tempo, info, melody=melody)
 
     midi_path = save_midi(pitch_result, target_dir / f"{source.stem}.mid")
     musicxml_path = save_musicxml(score, target_dir / f"{source.stem}.musicxml")
@@ -82,8 +95,9 @@ def _transcribe_audio(
         musicxml_path=musicxml_path,
         midi_path=midi_path,
         tempo_bpm=tempo,
-        note_count=len(pitch_result.notes),
+        note_count=len(pitch_result.notes) + len(melody_notes),
         key_name=key_name_of(score),
+        voice_found=voice_found,
     )
 
 
@@ -112,6 +126,11 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         default=None,
         help="조성 직접 지정 (예: G, D, e). 지정하지 않으면 자동으로 찾음",
     )
+    parser.add_argument(
+        "--vocals",
+        action="store_true",
+        help="사람이 부른 노래 녹음일 때: 목소리를 분리해 맨 위에 멜로디 단을 만듦 (몇 분 걸림)",
+    )
     return parser.parse_args(argv)
 
 
@@ -125,11 +144,16 @@ def main(argv: list[str] | None = None) -> int:
             lyricist=args.lyricist,
             key_name=args.key,
         )
-        result = transcribe_file(args.audio, args.output_dir, args.tempo, info)
+        result = transcribe_file(args.audio, args.output_dir, args.tempo, info, args.vocals)
     except (AudioLoadError, MidiLoadError, PitchDetectionError, ValueError) as error:
         print(f"오류: {error}", file=sys.stderr)
         return EXIT_ERROR
 
+    if result.voice_found is False:
+        print(
+            "알림: 사람 목소리를 찾지 못해 멜로디 단 없이 만들었어요. "
+            "Finale 재생 음원이라면 MIDI 파일을 넣어 보세요."
+        )
     print(
         f"완료! 찾은 음 {result.note_count}개, 템포 {result.tempo_bpm:.0f} BPM, "
         f"조성 {result.key_name}"

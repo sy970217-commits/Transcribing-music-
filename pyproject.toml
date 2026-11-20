@@ -5,6 +5,7 @@ description = "음원을 악보로 변환하는 프로그램"
 requires-python = ">=3.11,<3.12"
 dependencies = [
     "basic-pitch>=0.4.0",
+    "demucs>=4.1.0",
     "librosa>=0.10",
     "music21>=10.5.2",
     "setuptools<81",
