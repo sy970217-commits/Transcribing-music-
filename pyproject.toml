@@ -14,6 +14,7 @@ dependencies = [
 
 [project.scripts]
 transcribe = "transcriber.cli:main"
+render = "transcriber.render:main"
 
 [dependency-groups]
 dev = ["pytest>=8"]
