@@ -1,0 +1,19 @@
+[project]
+name = "transcriber"
+version = "0.1.0"
+description = "음원을 악보로 변환하는 프로그램"
+requires-python = ">=3.11,<3.12"
+dependencies = [
+    "librosa>=0.10",
+    "soundfile>=0.12",
+]
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/transcriber"]
