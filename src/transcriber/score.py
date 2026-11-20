@@ -1,6 +1,9 @@
 """박자 정리된 음으로 피아노 악보(MusicXML)를 만드는 모듈. music21을 사용한다."""
 
+import math
+from collections import Counter
 from dataclasses import dataclass
+from fractions import Fraction
 from pathlib import Path
 
 from music21 import chord, clef, key, metadata, meter, note, stream, tempo
@@ -9,6 +12,9 @@ from transcriber.rhythm import QuantizedNote
 
 MIDDLE_C = 60  # 가운데 도. 이 음 이상은 오른손(높은음자리표), 아래는 왼손(낮은음자리표)
 DEFAULT_TIME_SIGNATURE = "4/4"
+KEY_WINDOW_MEASURES = 4  # 조성을 이 마디 수씩 끊어서 찾는다
+MIN_KEY_RUN_WINDOWS = 3  # 같은 조표가 3창(12마디) 이상 이어져야 조바꿈으로 인정
+MIN_NOTES_FOR_KEY = 8  # 한 창에 음이 이보다 적으면 조성을 판단하지 않는다
 
 
 @dataclass(frozen=True)
@@ -55,18 +61,34 @@ def build_score(
     for part in parts:
         score.insert(0, part)
 
-    song_key = _resolve_key(score, info.key_name)
-    for part in score.parts:
-        part.insert(0, key.Key(song_key.tonic, song_key.mode))
+    bar_beats = meter.TimeSignature(time_signature).barDuration.quarterLength
+    for start, song_key in _resolve_keys(notes + melody, bar_beats, info.key_name):
+        for part in score.parts:
+            part.insert(start, key.Key(song_key.tonic, song_key.mode))
     score.metadata = _build_metadata(info)
     return score
 
 
 def key_name_of(score: stream.Score) -> str:
-    """악보의 조성과 조표를 설명한다. 예: "G major, 조표 ♯ 1개"."""
-    song_key = score.recurse().getElementsByClass(key.Key).first()
-    if song_key is None:
+    """악보의 조성과 조표를 설명한다.
+
+    예: "G major, 조표 ♯ 1개" 또는 조가 바뀌면
+    "G major, 조표 ♯ 1개 → 41마디부터 A major, 조표 ♯ 3개".
+    """
+    first_part = score.parts.first()
+    keys = list(first_part.flatten().getElementsByClass(key.Key)) if first_part else []
+    if not keys:
         return "알 수 없음"
+    time_signature = first_part.flatten().getElementsByClass(meter.TimeSignature).first()
+    bar_beats = time_signature.barDuration.quarterLength if time_signature else 4
+    descriptions = [_describe_key(keys[0])]
+    for later in keys[1:]:
+        measure = int(later.offset // bar_beats) + 1
+        descriptions.append(f"{measure}마디부터 {_describe_key(later)}")
+    return " → ".join(descriptions)
+
+
+def _describe_key(song_key: key.Key) -> str:
     if song_key.sharps > 0:
         signature = f"♯ {song_key.sharps}개"
     elif song_key.sharps < 0:
@@ -76,13 +98,86 @@ def key_name_of(score: stream.Score) -> str:
     return f"{song_key.name}, 조표 {signature}"
 
 
-def _resolve_key(score: stream.Score, key_name: str | None) -> key.Key:
-    if not key_name:
-        return score.analyze("key")
+def _parse_key(key_name: str) -> key.Key:
     try:
         return key.Key(key_name)
     except Exception as error:
         raise ValueError(f"알 수 없는 조성입니다: {key_name} (예: G, D, e)") from error
+
+
+def _resolve_keys(
+    notes: tuple[QuantizedNote, ...], bar_beats, key_name: str | None
+) -> list[tuple[Fraction, key.Key]]:
+    """곡의 조성과, 중간에 조가 바뀌는 위치를 찾는다. [(시작 박, 조성), ...]
+
+    곡을 4마디씩 잘라 조성을 찾고, 같은 조표가 12마디 이상 이어질 때만
+    조바꿈으로 인정한다(잠깐 다른 조의 음이 나오는 것은 무시).
+    """
+    if key_name:
+        return [(Fraction(0), _parse_key(key_name))]
+
+    window = Fraction(bar_beats) * KEY_WINDOW_MEASURES
+    total = max(n.start_beats + n.duration_beats for n in notes)
+    window_count = math.ceil(total / window)
+    window_keys = [
+        _analyze_key(tuple(n for n in notes if i * window <= n.start_beats < (i + 1) * window))
+        for i in range(window_count)
+    ]
+    change_windows = _stable_key_changes(window_keys)
+    if not change_windows:
+        return [(Fraction(0), _analyze_key(notes, min_notes=1))]
+
+    boundaries = [i * window for i in change_windows] + [total + 1]
+    return [
+        (start, _analyze_key(tuple(n for n in notes if start <= n.start_beats < end), min_notes=1))
+        for start, end in zip(boundaries, boundaries[1:])
+    ]
+
+
+def _analyze_key(notes: tuple[QuantizedNote, ...], min_notes: int = MIN_NOTES_FOR_KEY):
+    if len(notes) < min_notes:
+        return None
+    sample = stream.Stream()
+    for quantized in notes:
+        sample.append(note.Note(quantized.pitch, quarterLength=quantized.duration_beats))
+    return sample.analyze("key")
+
+
+def _smooth_signatures(window_keys: list) -> list[int | None]:
+    """각 창의 조표를 앞뒤 창과 다수결로 정한다. 한 창만 잘못 읽힌 것을 바로잡는다."""
+    signatures = [k.sharps if k is not None else None for k in window_keys]
+    smoothed: list[int | None] = []
+    for index, own in enumerate(signatures):
+        neighbors = [s for s in signatures[max(0, index - 1) : index + 2] if s is not None]
+        if not neighbors:
+            smoothed.append(None)
+            continue
+        counts = Counter(neighbors)
+        best = max(counts.values())
+        winners = [s for s, c in counts.items() if c == best]
+        smoothed.append(own if own in winners else winners[0])
+    return smoothed
+
+
+def _stable_key_changes(window_keys: list) -> list[int]:
+    """조표가 오래 이어지는 구간의 시작 창 번호들. 첫 값은 항상 0."""
+    runs: list[list] = []  # [시작 창 번호, 길이, 조표(♯ 수)]
+    for index, sharps in enumerate(_smooth_signatures(window_keys)):
+        if sharps is None:
+            if runs:
+                runs[-1][1] += 1
+            continue
+        if runs and runs[-1][2] == sharps:
+            runs[-1][1] += 1
+        else:
+            runs.append([index, 1, sharps])
+
+    changes: list[tuple[int, int]] = []  # (시작 창 번호, 조표)
+    for start, length, sharps in runs:
+        if length < MIN_KEY_RUN_WINDOWS or (changes and changes[-1][1] == sharps):
+            continue
+        changes.append((start if changes else 0, sharps))
+    return [start for start, _ in changes]
 
 
 def _build_metadata(info: ScoreInfo) -> metadata.Metadata:

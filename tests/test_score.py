@@ -107,6 +107,46 @@ def test_uses_given_key():
     assert key_name_of(score) == "D major, 조표 ♯ 2개"
 
 
+A_MAJOR_SCALE = (69, 71, 73, 74, 76, 78, 80, 81)  # 라 시 도# 레 미 파# 솔# 라
+
+
+def repeat_scale(scale, measures, start_beat=0):
+    """4/4 기준으로 음계를 4분음표로 반복해 원하는 마디 수만큼 채운다."""
+    return tuple(q(scale[i % len(scale)], start_beat + i) for i in range(measures * 4))
+
+
+def test_marks_key_change_in_the_middle():
+    notes = repeat_scale(G_MAJOR_SCALE, 16) + repeat_scale(A_MAJOR_SCALE, 16, start_beat=64)
+
+    description = key_name_of(build_score(notes, tempo_bpm=90))
+
+    assert "조표 ♯ 1개 → 17마디부터" in description
+    assert description.endswith("조표 ♯ 3개")
+
+
+def test_one_misread_section_does_not_delay_key_change():
+    # 가을꽃에서 본 경우: 바뀐 조(♯3) 구간 중간에 한 구간만 ♯4(E장조)로 읽힘
+    e_major_scale = (76, 78, 80, 81, 83, 85, 87, 88)
+    notes = (
+        repeat_scale(G_MAJOR_SCALE, 16)
+        + repeat_scale(A_MAJOR_SCALE, 8, start_beat=64)
+        + repeat_scale(e_major_scale, 4, start_beat=96)
+        + repeat_scale(A_MAJOR_SCALE, 16, start_beat=112)
+    )
+
+    assert "17마디부터" in key_name_of(build_score(notes, tempo_bpm=90))
+
+
+def test_short_visit_to_other_key_is_not_a_key_change():
+    notes = (
+        repeat_scale(G_MAJOR_SCALE, 16)
+        + repeat_scale(A_MAJOR_SCALE, 4, start_beat=64)
+        + repeat_scale(G_MAJOR_SCALE, 16, start_beat=80)
+    )
+
+    assert "→" not in key_name_of(build_score(notes, tempo_bpm=90))
+
+
 def test_unknown_key_raises_clear_error():
     with pytest.raises(ValueError, match="알 수 없는 조성"):
         build_score(g_major_melody(), tempo_bpm=90, info=ScoreInfo(key_name="H#q"))
