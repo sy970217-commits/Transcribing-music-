@@ -15,5 +15,9 @@ output/
 *.ogg
 !tests/fixtures/*
 
+# 가사 파일 (작사가의 저작물이므로 올리지 않음)
+*가사*.txt
+lyrics/
+
 # macOS
 .DS_Store
