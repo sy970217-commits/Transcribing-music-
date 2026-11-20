@@ -11,9 +11,11 @@ from pathlib import Path
 import pretty_midi
 
 from transcriber.rhythm import DEFAULT_SUBDIVISION, DEFAULT_TEMPO_BPM, QuantizedNote
+from transcriber.tempo_marks import TempoChange
 
 MIDI_EXTENSIONS = frozenset({".mid", ".midi"})
 PIANO_PROGRAMS = range(0, 8)  # General MIDI 0~7번은 피아노 계열 악기
+TEMPO_POSITION_STEPS = 16  # 빠르기 변화 위치를 1/16박 단위로 맞춤
 
 
 class MidiLoadError(Exception):
@@ -27,6 +29,7 @@ class MidiSong:
     tempo_bpm: float
     melody: tuple[QuantizedNote, ...]
     accompaniment: tuple[QuantizedNote, ...]
+    tempo_changes: tuple[TempoChange, ...] = ()  # 첫 빠르기 포함, 박 단위 위치
 
 
 def is_midi_file(path: str | Path) -> bool:
@@ -61,7 +64,25 @@ def read_midi(path: str | Path, subdivision: int = DEFAULT_SUBDIVISION) -> MidiS
         tempo_bpm=_first_tempo(midi),
         melody=_sorted(melody),
         accompaniment=_sorted(accompaniment),
+        tempo_changes=_tempo_changes(midi, subdivision),
     )
+
+
+def _tempo_changes(midi: pretty_midi.PrettyMIDI, subdivision: int) -> tuple[TempoChange, ...]:
+    """빠르기 변화를 박 단위 위치로 읽는다. 같은 박의 변화는 마지막 것만, 같은 빠르기 반복은 뺀다."""
+    times, tempos = midi.get_tempo_changes()
+    by_beat: dict[Fraction, float] = {}
+    for time, bpm in zip(times, tempos):
+        # 빠르기 변화 위치는 음표보다 촘촘하게(1/16박) 맞춘다. 작은 어긋남이 쌓이지 않게.
+        beat = _snap_beats(midi.time_to_tick(time) / midi.resolution, TEMPO_POSITION_STEPS)
+        by_beat[beat] = float(bpm)
+
+    changes: list[TempoChange] = []
+    for beat in sorted(by_beat):
+        if changes and abs(changes[-1].bpm - by_beat[beat]) < 0.05:
+            continue
+        changes.append(TempoChange(beat=beat, bpm=by_beat[beat]))
+    return tuple(changes)
 
 
 def _find_melody_track(tracks: list[pretty_midi.Instrument]) -> pretty_midi.Instrument | None:

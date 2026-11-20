@@ -40,6 +40,24 @@ def test_tempo_mark_is_kept(score_file, tmp_path):
     assert midi.get_tempo_changes()[1][0] == pytest.approx(TEMPO, abs=0.5)
 
 
+def test_tempo_changes_survive_score_and_midi(tmp_path):
+    from transcriber.tempo_marks import TempoChange
+
+    piano = tuple(q(60, beat) for beat in range(24))
+    ramp = tuple(TempoChange(Fraction(8) + Fraction(i, 2), 85 - 5 * i) for i in range(4))
+    changes = (TempoChange(Fraction(0), 90), *ramp, TempoChange(Fraction(12), 76))
+    score_path = save_musicxml(
+        build_score(piano, tempo_bpm=90, tempo_changes=changes), tmp_path / "song.musicxml"
+    )
+
+    xml = score_path.read_text(encoding="utf-8")
+    tempos = pretty_midi.PrettyMIDI(str(score_to_midi(score_path, tmp_path))).get_tempo_changes()[1]
+
+    assert ">rit.</words>" in xml
+    assert "<per-minute>76</per-minute>" in xml
+    assert [round(t) for t in tempos] == [90, 85, 80, 75, 70, 76]
+
+
 def test_missing_score_raises_clear_error(tmp_path):
     with pytest.raises(ScoreLoadError, match="찾을 수 없습니다"):
         score_to_midi(tmp_path / "없음.musicxml", tmp_path)

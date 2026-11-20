@@ -72,7 +72,11 @@ def _transcribe_midi(
     """MIDI → 악보. 멜로디 트랙이 있으면 맨 위 단으로 만든다."""
     song = read_midi(source)
     tempo = tempo_bpm if tempo_bpm is not None else song.tempo_bpm
-    score = build_score(song.accompaniment, tempo, info, melody=song.melody)
+    # --tempo로 빠르기를 직접 정하면 곡 전체를 그 빠르기 하나로 쓴다
+    tempo_changes = song.tempo_changes if tempo_bpm is None else ()
+    score = build_score(
+        song.accompaniment, tempo, info, melody=song.melody, tempo_changes=tempo_changes
+    )
     musicxml_path = save_musicxml(score, target_dir / f"{source.stem}.musicxml")
     return TranscriptionResult(
         musicxml_path=musicxml_path,

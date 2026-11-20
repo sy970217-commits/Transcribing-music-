@@ -6,10 +6,11 @@ from dataclasses import dataclass
 from fractions import Fraction
 from pathlib import Path
 
-from music21 import chord, clef, key, metadata, meter, note, stream, tempo
+from music21 import chord, clef, expressions, key, metadata, meter, note, stream, tempo
 
 from transcriber.lyrics import attach_lyrics
 from transcriber.rhythm import QuantizedNote
+from transcriber.tempo_marks import TempoChange, TempoMark, plan_tempo_marks
 
 MIDDLE_C = 60  # 가운데 도. 이 음 이상은 오른손(높은음자리표), 아래는 왼손(낮은음자리표)
 DEFAULT_TIME_SIGNATURE = "4/4"
@@ -39,6 +40,7 @@ def build_score(
     info: ScoreInfo = ScoreInfo(),
     time_signature: str = DEFAULT_TIME_SIGNATURE,
     melody: tuple[QuantizedNote, ...] = (),
+    tempo_changes: tuple[TempoChange, ...] = (),
 ) -> stream.Score:
     """피아노 2단(오른손/왼손) 악보를 만든다. melody가 있으면 맨 위에 멜로디 단을 더한다.
 
@@ -67,6 +69,9 @@ def build_score(
         attach_lyrics(melody_part, info.lyrics)
         parts.insert(0, melody_part)
     parts[0].insert(0, tempo.MetronomeMark(number=round(tempo_bpm)))
+    bar_length = Fraction(meter.TimeSignature(time_signature).barDuration.quarterLength)
+    for mark in plan_tempo_marks(tempo_changes, total_beats, bar_length):
+        parts[0].insert(mark.beat, _tempo_element(mark))
 
     score = stream.Score()
     for part in parts:
@@ -78,6 +83,19 @@ def build_score(
             part.insert(start, key.Key(song_key.tonic, song_key.mode))
     score.metadata = _build_metadata(info)
     return score
+
+
+def _tempo_element(mark: TempoMark):
+    """빠르기 표시를 악보 요소로 만든다. 숨은 빠르기는 소리만 바꾸고 눈에 보이지 않는다."""
+    if mark.kind == "text":
+        words = expressions.TextExpression(mark.text)
+        words.style.fontStyle = "italic"
+        return words
+    if mark.kind == "shown":
+        return tempo.MetronomeMark(number=round(mark.bpm))
+    hidden = tempo.MetronomeMark()
+    hidden.numberSounding = mark.bpm
+    return hidden
 
 
 def key_name_of(score: stream.Score) -> str:
