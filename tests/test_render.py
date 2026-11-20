@@ -1,9 +1,21 @@
 from fractions import Fraction
+from pathlib import Path
 
+import numpy as np
 import pretty_midi
 import pytest
+import soundfile as sf
 
-from transcriber.render import EXIT_ERROR, EXIT_OK, ScoreLoadError, main, score_to_midi
+from transcriber.render import (
+    EXIT_ERROR,
+    EXIT_OK,
+    AudioRenderError,
+    ScoreLoadError,
+    find_fluidsynth,
+    main,
+    midi_to_audio,
+    score_to_midi,
+)
 from transcriber.rhythm import QuantizedNote
 from transcriber.score import build_score, save_musicxml
 
@@ -65,6 +77,51 @@ def test_tempo_changes_survive_score_and_midi(tmp_path):
     assert ">rit.</words>" in xml
     assert "<per-minute>76</per-minute>" in xml
     assert [round(t) for t in tempos] == [90, 85, 80, 75, 70, 76]
+
+
+SOUNDFONT = Path(__file__).resolve().parents[1] / "soundfonts" / "MuseScore_General.sf3"
+needs_synth = pytest.mark.skipif(
+    find_fluidsynth() is None or not SOUNDFONT.is_file(),
+    reason="FluidSynth 또는 사운드폰트가 설치되지 않음",
+)
+
+
+@needs_synth
+def test_midi_becomes_audible_wav(score_file, tmp_path):
+    midi_path = score_to_midi(score_file, tmp_path)
+
+    wav_path = midi_to_audio(midi_path, SOUNDFONT)
+
+    samples, rate = sf.read(wav_path)
+    assert wav_path == tmp_path / "song.wav"
+    # 4박 @120 = 2초. 소리가 잦아드는 시간(잔향)이 뒤에 붙어 조금 더 길다
+    assert 2.0 <= len(samples) / rate <= 10.0
+    assert np.abs(samples).max() > 0.01  # 무음이 아님
+
+
+def test_missing_soundfont_raises_clear_error(score_file, tmp_path):
+    midi_path = score_to_midi(score_file, tmp_path)
+
+    with pytest.raises(AudioRenderError, match="사운드폰트를 찾을 수 없습니다"):
+        midi_to_audio(midi_path, tmp_path / "없음.sf3")
+
+
+def test_missing_fluidsynth_raises_install_hint(score_file, tmp_path, monkeypatch):
+    from transcriber import render
+
+    monkeypatch.setattr(render, "find_fluidsynth", lambda: None)
+    midi_path = score_to_midi(score_file, tmp_path)
+
+    with pytest.raises(AudioRenderError, match="brew install fluid-synth"):
+        midi_to_audio(midi_path, SOUNDFONT)
+
+
+@needs_synth
+def test_main_with_audio_option(score_file, tmp_path, capsys):
+    exit_code = main([str(score_file), "--output-dir", str(tmp_path), "--audio", "--soundfont", str(SOUNDFONT)])
+
+    assert exit_code == EXIT_OK
+    assert "song.wav" in capsys.readouterr().out
 
 
 def test_missing_score_raises_clear_error(tmp_path):
