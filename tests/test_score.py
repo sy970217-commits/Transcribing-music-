@@ -203,6 +203,19 @@ def test_accidentals_only_where_needed(tmp_path):
     assert [a for _, a in shown[5][:2]] == ["natural", "natural"]  # 조표와 다르면 옥타브마다 표시
 
 
+def test_grand_staff_distance_is_set(tmp_path):
+    from music21 import converter
+
+    path = save_musicxml(build_score((q(C4, 0), q(C3, 0)), tempo_bpm=90), tmp_path / "s.musicxml")
+    xml = path.read_text(encoding="utf-8")
+
+    defaults = xml.split("<defaults>")[1].split("</defaults>")[0]
+    assert '<staff-layout number="2">' in defaults
+    assert "<staff-distance>70</staff-distance>" in defaults
+    assert defaults.index("</scaling>") < defaults.index("<staff-layout")  # MusicXML 순서 규칙
+    assert len(converter.parse(str(path)).parts) == 2  # 파일이 여전히 올바르게 읽힘
+
+
 def test_no_double_barline_without_changes(tmp_path):
     xml = save_musicxml(build_score(repeat_scale(G_MAJOR_SCALE, 8), 90), tmp_path / "s.musicxml").read_text(
         encoding="utf-8"

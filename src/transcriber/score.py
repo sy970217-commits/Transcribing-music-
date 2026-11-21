@@ -376,8 +376,34 @@ def save_musicxml(score: stream.Score, output_path: str | Path) -> Path:
         _add_double_barlines(part)
         _number_voices(part)
         _show_needed_accidentals(part)
-    written = notated.write("musicxml", fp=str(path))
-    return Path(written)
+    written = Path(notated.write("musicxml", fp=str(path)))
+    _set_grand_staff_distance(written)
+    return written
+
+
+GRAND_STAFF_DISTANCE_TENTHS = 70  # 피아노 높은음자리표 단과 낮은음자리표 단 사이: 7칸(1칸 = 10)
+DEFAULTS_ORDER_AFTER_STAFF_LAYOUT = ("<appearance", "<music-font", "<word-font", "<lyric-font", "<lyric-language")
+
+
+def _set_grand_staff_distance(path: Path) -> None:
+    """MusicXML의 <defaults>에 피아노 두 단 사이 간격을 적는다(music21은 이 값을 쓰지 않음).
+
+    number="2"는 '두 번째 단(낮은음자리표)과 그 위 단 사이'라는 뜻이다.
+    """
+    text = path.read_text(encoding="utf-8")
+    staff_layout = (
+        f'    <staff-layout number="2">\n'
+        f"      <staff-distance>{GRAND_STAFF_DISTANCE_TENTHS}</staff-distance>\n"
+        f"    </staff-layout>\n"
+    )
+    defaults_end = text.find("</defaults>")
+    if defaults_end == -1:
+        return
+    defaults_start = text.find("<defaults>")
+    later = [text.find(tag, defaults_start, defaults_end) for tag in DEFAULTS_ORDER_AFTER_STAFF_LAYOUT]
+    insert_at = min([i for i in later if i != -1], default=defaults_end)
+    line_start = text.rfind("\n", 0, insert_at) + 1
+    path.write_text(text[:line_start] + staff_layout + text[line_start:], encoding="utf-8")
 
 
 def _show_needed_accidentals(part: stream.Part) -> None:
