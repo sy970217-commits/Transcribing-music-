@@ -49,8 +49,8 @@ def test_two_voice_stems_follow_the_staff(tmp_path):
     piano_part = part_xml(xml.read_text(encoding="utf-8"), 0)
 
     assert "<backup>" in piano_part  # 두 성부
-    assert all("<stem>up</stem>" in n for n in staff_notes(piano_part, 1))
-    assert all("<stem>down</stem>" in n for n in staff_notes(piano_part, 2))
+    assert all(re.search(r"<stem[^>]*>up</stem>", n) for n in staff_notes(piano_part, 1))
+    assert all(re.search(r"<stem[^>]*>down</stem>", n) for n in staff_notes(piano_part, 2))
 
 
 def test_single_voice_stems_point_away_from_the_gap(tmp_path):
@@ -100,3 +100,18 @@ def test_fermata_goes_above_melody_and_upper_staff_only(tmp_path):
         r"<note[ >].*?</note>", melody_part, re.S
     )[-1]
     assert "<fermata" in last_melody_note  # 곡의 마지막 음에
+
+
+def test_stem_stops_above_the_other_voice_note(tmp_path):
+    # 아래 단: 미♭2(39)를 2박 누르고, 위로 미♭3·솔3·시♭3 화음이 8분음표로
+    lower = (q(39, 0, 2),) + tuple(
+        QuantizedNote(pitch=p, velocity=80, start_beats=Fraction(i, 2), duration_beats=Fraction(1, 2))
+        for i in range(4)
+        for p in (51, 55, 58)
+    )
+    xml = save_musicxml(build_score(lower, tempo_bpm=90, allow_voices=True), tmp_path / "s.musicxml")
+    piano_part = part_xml(xml.read_text(encoding="utf-8"), 0)
+
+    shortened = re.findall(r'<stem default-y="(-?[\d.]+)">down</stem>', piano_part)
+    # 미♭3(맨 윗줄에서 -25)에서 시작한 기둥이 미♭2(-50)보다 1칸 위(-40)에서 멈춤
+    assert shortened and all(float(y) == -40 for y in shortened)

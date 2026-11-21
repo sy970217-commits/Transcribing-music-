@@ -9,6 +9,8 @@
 
 from music21 import dynamics, expressions, stream
 
+from transcriber.stem_lengths import shorten_blocking_stems
+
 ABOVE, BELOW = "above", "below"
 UP, DOWN = "up", "down"
 
@@ -36,3 +38,7 @@ def _place_part(part: stream.Part, marks_side: str, stem: str | None) -> None:
     if stem is not None:
         for element in part.recurse().notes:  # 두 성부인 마디의 음까지 모두
             element.stemDirection = stem
+        current_clef = None
+        for measure in part.getElementsByClass(stream.Measure):
+            current_clef = measure.clef or current_clef  # 마디에 적힌 음자리표, 없으면 앞 마디 것
+            shorten_blocking_stems(measure, stem, current_clef)  # 같은 방향 기둥이 다른 성부 음표를 가리지 않게
