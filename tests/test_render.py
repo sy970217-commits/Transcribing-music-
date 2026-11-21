@@ -236,6 +236,30 @@ def test_big_slowdown_shows_fermata_and_still_plays_long(tmp_path):
     assert midi.get_tempo_changes()[1][-1] == pytest.approx(30, abs=0.5)
 
 
+def test_held_note_becomes_second_voice_and_keeps_its_length(tmp_path):
+    # 왼손: 도(48)를 4박 누르고 그 위로 미·솔·도·미가 1박씩
+    left = (q(48, 0, length=4), q(52, 0), q(55, 1), q(52, 2), q(55, 3))
+    score_path = save_musicxml(
+        build_score(left, tempo_bpm=TEMPO, allow_voices=True), tmp_path / "voices.musicxml"
+    )
+
+    xml = score_path.read_text(encoding="utf-8")
+    midi = pretty_midi.PrettyMIDI(str(score_to_midi(score_path, tmp_path)))
+    held = next(n for inst in midi.instruments for n in inst.notes if n.pitch == 48)
+
+    assert "<backup>" in xml  # 한 단에 두 성부
+    assert "<voice>1</voice>" in xml and "<voice>2</voice>" in xml
+    assert "<voice>0</voice>" not in xml
+    assert held.end - held.start == pytest.approx(2.0, abs=0.01)  # 4박 @120 = 2초, 잘리지 않음
+
+
+def test_without_voices_held_note_is_trimmed(tmp_path):
+    left = (q(48, 0, length=4), q(52, 0), q(55, 1))
+    xml = save_musicxml(build_score(left, tempo_bpm=TEMPO), tmp_path / "v.musicxml").read_text(encoding="utf-8")
+
+    assert "<backup>" not in xml
+
+
 def test_missing_score_raises_clear_error(tmp_path):
     with pytest.raises(ScoreLoadError, match="찾을 수 없습니다"):
         score_to_midi(tmp_path / "없음.musicxml", tmp_path)

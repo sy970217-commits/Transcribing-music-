@@ -34,6 +34,7 @@ from transcriber.dynamics_marks import DynamicMark, plan_dynamics
 from transcriber.pedals import PedalSpan, attach_pedals
 from transcriber.spelling import respell_part
 from transcriber.tempo_marks import TempoChange, TempoMark, plan_tempo_marks
+from transcriber.voices import VoicedChord, split_voices
 
 MIDDLE_C = 60  # 가운데 도. 이 음 이상은 오른손(높은음자리표), 아래는 왼손(낮은음자리표)
 KEY_WINDOW_MEASURES = 4  # 조성을 이 마디 수씩 끊어서 찾는다
@@ -65,11 +66,13 @@ def build_score(
     melody: tuple[QuantizedNote, ...] = (),
     tempo_changes: tuple[TempoChange, ...] = (),
     pedals: tuple[PedalSpan, ...] = (),
+    allow_voices: bool = False,
 ) -> stream.Score:
     """피아노 2단(오른손/왼손) 악보를 만든다. melody가 있으면 맨 위에 멜로디 단을 더한다.
 
     info.lyrics(음절 목록)가 있으면 멜로디 음표에 차례로 붙인다.
     time_signatures가 없으면 4/4로 쓴다. info.time_signature를 정하면 그것을 쓴다.
+    allow_voices=True면 피아노 단에서 길게 누른 음을 2성부로 따로 적는다(MIDI처럼 음 길이가 정확할 때).
     """
     if info.time_signature:
         time_signatures = (TimeSignatureChange(beat=Fraction(0), text=info.time_signature),)
@@ -88,8 +91,8 @@ def build_score(
     left_hand = tuple(n for n in notes if n.pitch < MIDDLE_C)
 
     parts = [
-        _build_part(right_hand, clef.TrebleClef(), signatures, total_beats),
-        _build_part(left_hand, clef.BassClef(), signatures, total_beats),
+        _build_part(right_hand, clef.TrebleClef(), signatures, total_beats, allow_voices),
+        _build_part(left_hand, clef.BassClef(), signatures, total_beats, allow_voices),
     ]
     for piano_part in parts:
         piano_part.insert(0, instrument.Piano())
@@ -361,8 +364,16 @@ def save_musicxml(score: stream.Score, output_path: str | Path) -> Path:
     notated = score.makeNotation()
     for part in notated.parts:
         _add_double_barlines(part)
+        _number_voices(part)
     written = notated.write("musicxml", fp=str(path))
     return Path(written)
+
+
+def _number_voices(part: stream.Part) -> None:
+    """마디 안의 성부 번호를 1, 2로 맞춘다(music21은 0부터 매겨서 Finale 등이 헷갈릴 수 있음)."""
+    for measure in part.getElementsByClass(stream.Measure):
+        for number, voice in enumerate(measure.voices, start=1):
+            voice.id = number
 
 
 def _add_double_barlines(part: stream.Part) -> None:
@@ -381,6 +392,7 @@ def _build_part(
     part_clef: clef.Clef,
     signatures: tuple[TimeSignatureChange, ...],
     total_beats,
+    allow_voices: bool = False,
 ) -> stream.Part:
     part = stream.Part()
     part.insert(0, part_clef)
@@ -390,10 +402,45 @@ def _build_part(
         part.insert(0, note.Rest(quarterLength=total_beats))
         return part
 
+    if allow_voices:
+        upper, lower = split_voices(hand_notes)
+        if lower:
+            part.insert(0, _voice_stream("1", upper, lower, total_beats, hide_all_rests=False))
+            part.insert(0, _voice_stream("2", lower, upper, total_beats, hide_all_rests=True))
+            return part
+
     for start, duration, group in _group_by_start(hand_notes):
         part.insert(start, _to_music21_element(group, duration))
     part.makeRests(fillGaps=True, inPlace=True)
     return part
+
+
+def _voice_stream(
+    voice_id: str,
+    chords: tuple[VoicedChord, ...],
+    other: tuple[VoicedChord, ...],
+    total_beats,
+    hide_all_rests: bool,
+) -> stream.Voice:
+    """한 성부를 만든다. 빈 곳은 쉼표로 채우되, 다른 성부가 울리는 동안의 쉼표는 숨긴다."""
+    voice = stream.Voice(id=voice_id)
+    cursor = Fraction(0)
+    for chord_ in chords:
+        if chord_.start > cursor:
+            voice.insert(cursor, _filler_rest(cursor, chord_.start, other, hide_all_rests))
+        voice.insert(chord_.start, _to_music21_element(chord_.notes, chord_.duration))
+        cursor = max(cursor, chord_.start + chord_.duration)
+    if cursor < total_beats:
+        voice.insert(cursor, _filler_rest(cursor, Fraction(total_beats), other, hide_all_rests))
+    return voice
+
+
+def _filler_rest(start, end, other: tuple[VoicedChord, ...], hide: bool) -> note.Rest:
+    rest = note.Rest(quarterLength=end - start)
+    other_sounding = any(c.start < end and c.start + c.duration > start for c in other)
+    if hide or other_sounding:
+        rest.style.hideObjectOnPrint = True
+    return rest
 
 
 def _group_by_start(hand_notes: tuple[QuantizedNote, ...]):

@@ -82,6 +82,7 @@ def _transcribe_midi(
         melody=song.melody,
         tempo_changes=tempo_changes,
         pedals=song.pedals,
+        allow_voices=True,  # MIDI는 음 길이가 정확해서 길게 누른 음을 2성부로 적을 수 있다
     )
     musicxml_path = save_musicxml(score, target_dir / f"{source.stem}.musicxml")
     return TranscriptionResult(
