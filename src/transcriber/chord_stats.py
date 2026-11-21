@@ -5,6 +5,7 @@
 - 88건반 묶음: 가장 낮은 음을 0으로 두고 반음 단위 거리 (예: 도3·미4·솔4 → 0,16,19)
 - 12음 묶음: 옥타브를 무시하고 맨 아래 음을 0으로 둔 모양 (예: 0,4,7)
   + 맨 아래 음 이름(0=도 … 11=시)과 구글 시트 '음높이 N개' 파일에서의 번호(맨 아래 음 블록 포함)
+- 코드 이름(chord_names): CM, Am, Bdim, Caug, 자리바꿈은 CM/E처럼. 맞는 코드가 없으면 빈칸
 
 실행: uv run chord-stats 곡.mid  →  output/곡_음높이묶음.csv
 """
@@ -15,6 +16,7 @@ import sys
 from collections import Counter
 from pathlib import Path
 
+from transcriber.chord_names import chord_name
 from transcriber.midi_input import MidiLoadError, read_midi
 from transcriber.pitch_sets import PITCH_CLASSES, from_midi, index_of, pitch_class_set, sheet_number
 from transcriber.rhythm import QuantizedNote
@@ -36,7 +38,13 @@ def count_sets(notes: tuple[QuantizedNote, ...]) -> Counter:
     counter: Counter = Counter()
     for pitches in sounding_sets(notes):
         try:
-            key = (from_midi(pitches), pitch_class_set(pitches), pitches[0] % PITCH_CLASSES, sheet_number(pitches))
+            key = (
+                from_midi(pitches),
+                pitch_class_set(pitches),
+                pitches[0] % PITCH_CLASSES,
+                sheet_number(pitches),
+                chord_name(pitches) or "",
+            )
             counter[key] += 1
         except ValueError:
             continue
@@ -49,10 +57,10 @@ def write_csv(rows: list[tuple[str, Counter]], path: Path) -> Path:
     with path.open("w", encoding="utf-8-sig", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(
-            ["파트", "음개수", "88건반_묶음", "88건반_번호", "12음_묶음", "12음_맨아래", "12음_시트번호", "횟수"]
+            ["파트", "음개수", "88건반_묶음", "88건반_번호", "12음_묶음", "12음_맨아래", "12음_시트번호", "코드", "횟수"]
         )
         for part, counter in rows:
-            for (keys_set, class_set, lowest, number), times in sorted(counter.items(), key=lambda item: (-item[1], item[0])):
+            for (keys_set, class_set, lowest, number, chord), times in sorted(counter.items(), key=lambda item: (-item[1], item[0])):
                 writer.writerow(
                     [
                         part,
@@ -62,6 +70,7 @@ def write_csv(rows: list[tuple[str, Counter]], path: Path) -> Path:
                         ",".join(map(str, class_set)),
                         lowest,
                         number,
+                        chord,
                         times,
                     ]
                 )
