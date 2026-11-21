@@ -1,3 +1,4 @@
+import re
 from fractions import Fraction
 
 import pytest
@@ -213,10 +214,30 @@ def test_grand_staff_distance_is_set(tmp_path):
     assert '<staff-layout number="2">' in defaults
     grand_staff = defaults.split('<staff-layout number="2">')[1].split("</staff-layout>")[0]
     assert "<staff-distance>20</staff-distance>" in grand_staff  # 두 단의 C4 덧줄이 같은 높이(바꾸지 않음)
-    to_melody = defaults.split('<staff-layout number="1">')[1].split("</staff-layout>")[0]
-    assert "<staff-distance>120</staff-distance>" in to_melody  # 가사 자리를 위해 멜로디와 넓게
+    assert '<staff-layout number="1">' not in defaults  # 공통 설정에는 피아노 두 단 간격만
     assert defaults.index("</scaling>") < defaults.index("<staff-layout")  # MusicXML 순서 규칙
     assert len(converter.parse(str(path)).parts) == 2  # 파일이 여전히 올바르게 읽힘
+
+
+def test_melody_to_piano_distance_only_in_piano_first_measure(tmp_path):
+    melody = (q(72, 0), q(74, 1))
+    path = save_musicxml(build_score((q(C4, 0), q(C3, 0)), tempo_bpm=90, melody=melody), tmp_path / "s.musicxml")
+    xml = path.read_text(encoding="utf-8")
+
+    melody_part, piano_part = re.findall(r"<part id=.*?</part>", xml, re.S)
+    piano_print = piano_part.split("<print>")[1].split("</print>")[0]
+    assert "<print>" not in melody_part
+    assert piano_print.count("<staff-layout") == 2
+    assert '<staff-layout number="1">\n          <staff-distance>120' in piano_print
+    assert '<staff-layout number="2">\n          <staff-distance>20' in piano_print
+
+
+def test_piano_alone_has_no_melody_distance(tmp_path):
+    xml = save_musicxml(build_score((q(C4, 0), q(C3, 0)), tempo_bpm=90), tmp_path / "s.musicxml").read_text(
+        encoding="utf-8"
+    )
+
+    assert "<print>" not in xml
 
 
 def test_no_double_barline_without_changes(tmp_path):

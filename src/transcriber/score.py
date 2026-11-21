@@ -1,6 +1,7 @@
 """박자 정리된 음으로 피아노 악보(MusicXML)를 만드는 모듈. music21을 사용한다."""
 
 import math
+import re
 from collections import Counter
 from dataclasses import dataclass
 from fractions import Fraction
@@ -392,26 +393,54 @@ DEFAULTS_ORDER_AFTER_STAFF_LAYOUT = ("<appearance", "<music-font", "<word-font",
 
 
 def _set_staff_distances(path: Path) -> None:
-    """MusicXML의 <defaults>에 단 사이 간격을 적는다(music21은 이 값을 쓰지 않음).
+    """단 사이 간격을 MusicXML에 적는다(music21은 이 값을 쓰지 않음).
 
-    number="1": 각 악기의 첫 단과 그 위 악기 사이(피아노 위 단과 멜로디 사이). 맨 위 단에는 적용되지 않는다.
-    number="2": 악기 안의 두 번째 단과 그 위 단 사이(피아노 낮은음자리표 단과 높은음자리표 단 사이).
+    - 공통 설정(<defaults>): 피아노 두 단 사이(number="2")만. C4 위치를 맞추는 가장 중요한 값.
+    - 피아노 첫 마디(<print>): 멜로디와 피아노 사이(number="1")와 피아노 두 단 사이를 함께 적는다.
+      공통 설정에 number="1"을 넣으면 Finale가 피아노 두 단 사이에도 적용할 수 있어서 피아노에만 적는다.
     """
     text = path.read_text(encoding="utf-8")
-    staff_layout = "".join(
-        f'    <staff-layout number="{number}">\n'
-        f"      <staff-distance>{distance}</staff-distance>\n"
-        f"    </staff-layout>\n"
-        for number, distance in ((1, MELODY_TO_PIANO_DISTANCE_TENTHS), (2, GRAND_STAFF_DISTANCE_TENTHS))
+    text = _insert_into_defaults(text, _staff_layout_xml(2, GRAND_STAFF_DISTANCE_TENTHS, indent=4))
+    text = _insert_piano_first_print(text)
+    path.write_text(text, encoding="utf-8")
+
+
+def _staff_layout_xml(number: int, distance: int, indent: int) -> str:
+    pad = " " * indent
+    return (
+        f'{pad}<staff-layout number="{number}">\n'
+        f"{pad}  <staff-distance>{distance}</staff-distance>\n"
+        f"{pad}</staff-layout>\n"
     )
+
+
+def _insert_into_defaults(text: str, xml: str) -> str:
     defaults_end = text.find("</defaults>")
     if defaults_end == -1:
-        return
+        return text
     defaults_start = text.find("<defaults>")
     later = [text.find(tag, defaults_start, defaults_end) for tag in DEFAULTS_ORDER_AFTER_STAFF_LAYOUT]
     insert_at = min([i for i in later if i != -1], default=defaults_end)
     line_start = text.rfind("\n", 0, insert_at) + 1
-    path.write_text(text[:line_start] + staff_layout + text[line_start:], encoding="utf-8")
+    return text[:line_start] + xml + text[line_start:]
+
+
+def _insert_piano_first_print(text: str) -> str:
+    """피아노(두 단 악기) 첫 마디 맨 앞에 <print>로 간격을 적는다. 멜로디가 없으면 할 일 없음."""
+    parts = list(re.finditer(r"<part id=[^>]*>", text))
+    if len(parts) < 2:
+        return text  # 피아노만 있으면 피아노가 맨 위라 멜로디와의 간격이 필요 없다
+    piano = next((p for p in parts if "<staves>2</staves>" in text[p.end() : text.find("</part>", p.end())]), None)
+    if piano is None:
+        return text
+    first_measure = re.compile(r"<measure[^>]*>\n").search(text, piano.end())
+    print_xml = (
+        "      <print>\n"
+        + _staff_layout_xml(1, MELODY_TO_PIANO_DISTANCE_TENTHS, indent=8)
+        + _staff_layout_xml(2, GRAND_STAFF_DISTANCE_TENTHS, indent=8)
+        + "      </print>\n"
+    )
+    return text[: first_measure.end()] + print_xml + text[first_measure.end() :]
 
 
 def _show_needed_accidentals(part: stream.Part) -> None:
