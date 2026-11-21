@@ -381,7 +381,9 @@ def save_musicxml(score: stream.Score, output_path: str | Path) -> Path:
     return written
 
 
-GRAND_STAFF_DISTANCE_TENTHS = 70  # 피아노 높은음자리표 단과 낮은음자리표 단 사이: 7칸(1칸 = 10)
+# 피아노 두 단 사이 간격(1칸 = 10). 높은음자리표의 C4(아래 덧줄 1개)와 낮은음자리표의 C4(위 덧줄 1개)가
+# 같은 높이에 오도록: 위 단 아래로 1칸 + 아래 단 위로 1칸 = 2칸
+GRAND_STAFF_DISTANCE_TENTHS = 20
 DEFAULTS_ORDER_AFTER_STAFF_LAYOUT = ("<appearance", "<music-font", "<word-font", "<lyric-font", "<lyric-language")
 
 
