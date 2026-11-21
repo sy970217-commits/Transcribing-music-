@@ -20,6 +20,8 @@ from transcriber.rhythm import QuantizedNote
 
 MIN_CHORD_TONES = 3  # 음이름이 3개 이상일 때만 코드로 본다
 MAX_CANDIDATE_TONES = 6  # 오래 울린 음 6개 안에서 코드를 찾는다
+# 코드 기호 높이: 맨 위 단의 윗줄에서 3.5칸 위(높은 음·덧줄보다 위, 윗줄 악보와는 줄 사이 간격으로 떨어짐)
+CHORD_HEIGHT_TENTHS = 35
 
 
 @dataclass(frozen=True)
@@ -101,4 +103,5 @@ def attach_chord_symbols(
             root=NOTE_NAMES[chord.root], bass=NOTE_NAMES[chord.bass], kind=MUSICXML_KINDS[chord.kind]
         )
         symbol.chordKindStr = chord.kind  # 악보에 보이는 글자(M, m, dim, 7 …)
+        symbol.style.absoluteY = CHORD_HEIGHT_TENTHS  # 모든 코드를 같은 높이에
         part.insert(mark.beat, symbol)

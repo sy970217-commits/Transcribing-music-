@@ -59,6 +59,7 @@ def test_chord_symbols_are_written_above_the_top_staff(tmp_path):
     melody_part = re.findall(r"<part id=.*?</part>", path.read_text(encoding="utf-8"), re.S)[0]
     harmonies = re.findall(r"<harmony.*?</harmony>", melody_part, re.S)
     assert len(harmonies) == 2
+    assert all('<harmony default-y="35"' in h for h in harmonies)  # 모두 같은 높이
     assert "<root-step>C</root-step>" in harmonies[0] and 'text="M"' in harmonies[0]
     assert "<root-step>A</root-step>" in harmonies[1] and 'text="m"' in harmonies[1]
 
