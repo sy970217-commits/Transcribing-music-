@@ -41,6 +41,18 @@ def test_triplet_numbers_go_outside_the_piano_staves(tmp_path):
     assert 'placement="below"' in lower and 'placement="above"' not in lower
 
 
+def test_two_voice_stems_follow_the_staff(tmp_path):
+    # 위 단: 미(64)를 4박 누르고 위로 솔·라·솔·라 / 아래 단: 도(48)를 4박 누르고 미·솔·미·솔
+    upper = (q(64, 0, 4), q(67, 0), q(69, 1), q(67, 2), q(69, 3))
+    lower = (q(48, 0, 4), q(52, 0), q(55, 1), q(52, 2), q(55, 3))
+    xml = save_musicxml(build_score(upper + lower, tempo_bpm=90, allow_voices=True), tmp_path / "s.musicxml")
+    piano_part = part_xml(xml.read_text(encoding="utf-8"), 0)
+
+    assert "<backup>" in piano_part  # 두 성부
+    assert all("<stem>up</stem>" in n for n in staff_notes(piano_part, 1))
+    assert all("<stem>down</stem>" in n for n in staff_notes(piano_part, 2))
+
+
 def test_single_voice_stems_point_away_from_the_gap(tmp_path):
     piano = (q(60, 0), q(62, 1), q(59, 0), q(57, 1))  # 두 단 사이 가까운 음들
 
