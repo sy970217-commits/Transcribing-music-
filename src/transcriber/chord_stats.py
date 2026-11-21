@@ -3,7 +3,8 @@
 어떤 음이든 새로 시작하는 순간마다, 그때 울리고 있는 음들을 하나의 묶음으로 본다.
 묶음은 두 가지로 적는다(pitch_sets와 같은 규칙).
 - 88건반 묶음: 가장 낮은 음을 0으로 두고 반음 단위 거리 (예: 도3·미4·솔4 → 0,16,19)
-- 12음 묶음: 옥타브를 무시한 모양 (예: 0,4,7) → 구글 시트 '음높이 N개' 파일의 열 번호도 적는다
+- 12음 묶음: 옥타브를 무시하고 맨 아래 음을 0으로 둔 모양 (예: 0,4,7)
+  + 맨 아래 음 이름(0=도 … 11=시)과 구글 시트 '음높이 N개' 파일에서의 번호(맨 아래 음 블록 포함)
 
 실행: uv run chord-stats 곡.mid  →  output/곡_음높이묶음.csv
 """
@@ -15,7 +16,7 @@ from collections import Counter
 from pathlib import Path
 
 from transcriber.midi_input import MidiLoadError, read_midi
-from transcriber.pitch_sets import PITCH_CLASSES, from_midi, index_of, pitch_class_set
+from transcriber.pitch_sets import PITCH_CLASSES, from_midi, index_of, pitch_class_set, sheet_number
 from transcriber.rhythm import QuantizedNote
 
 DEFAULT_OUTPUT_DIR = Path("output")
@@ -35,7 +36,8 @@ def count_sets(notes: tuple[QuantizedNote, ...]) -> Counter:
     counter: Counter = Counter()
     for pitches in sounding_sets(notes):
         try:
-            counter[(from_midi(pitches), pitch_class_set(pitches))] += 1
+            key = (from_midi(pitches), pitch_class_set(pitches), pitches[0] % PITCH_CLASSES, sheet_number(pitches))
+            counter[key] += 1
         except ValueError:
             continue
     return counter
@@ -46,9 +48,11 @@ def write_csv(rows: list[tuple[str, Counter]], path: Path) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8-sig", newline="") as f:
         writer = csv.writer(f)
-        writer.writerow(["파트", "음개수", "88건반_묶음", "88건반_번호", "12음_묶음", "12음_시트열", "횟수"])
+        writer.writerow(
+            ["파트", "음개수", "88건반_묶음", "88건반_번호", "12음_묶음", "12음_맨아래", "12음_시트번호", "횟수"]
+        )
         for part, counter in rows:
-            for (keys_set, class_set), times in sorted(counter.items(), key=lambda item: (-item[1], item[0])):
+            for (keys_set, class_set, lowest, number), times in sorted(counter.items(), key=lambda item: (-item[1], item[0])):
                 writer.writerow(
                     [
                         part,
@@ -56,7 +60,8 @@ def write_csv(rows: list[tuple[str, Counter]], path: Path) -> Path:
                         ",".join(map(str, keys_set)),
                         index_of(keys_set) + 1,
                         ",".join(map(str, class_set)),
-                        index_of(class_set, keys=PITCH_CLASSES) + 1,
+                        lowest,
+                        number,
                         times,
                     ]
                 )

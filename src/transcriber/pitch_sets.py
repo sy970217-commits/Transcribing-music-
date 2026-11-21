@@ -6,7 +6,8 @@
   예: 3개 묶음은 (0,1,2), (0,1,3), …, (0,1,11), (0,2,3), …
 
 칸 수(keys):
-- 12: 옥타브를 무시한 12음 (시트 '음높이 N개' 파일, N은 1~12)
+- 12: 옥타브를 무시한 12음 (시트 '음높이 N개' 파일, N은 1~12). 0=도(C), 1=도#, …, 11=시
+  시트는 맨 아래 음이 0인 블록 다음에 맨 아래 음이 1, 2, …, 11인 블록이 이어진다(12배).
 - 88: 피아노 건반 전체 (N은 1~88, 경우의 수가 너무 커서 시트로 저장하지 않고 계산한다)
 
 번호는 0부터 센다(시트의 열 번호 = 번호 + 1).
@@ -79,6 +80,17 @@ def pitch_class_set(pitches: Iterable[int]) -> tuple[int, ...]:
     if not unique:
         raise ValueError("음이 하나도 없습니다")
     return tuple(sorted({(p - unique[0]) % PITCH_CLASSES for p in unique}))
+
+
+def sheet_number(pitches: Iterable[int]) -> int:
+    """MIDI 음 번호들 → 구글 시트 '음높이 N개' 파일에서의 번호(1부터, 맨 아래 음 블록까지 포함).
+
+    맨 아래 음의 음이름(0=도 … 11=시) 블록 안에서, 그 음을 0으로 둔 모양의 순서를 센다.
+    번호 = 맨 아래 음 × (블록 하나의 개수) + 모양 번호 + 1
+    """
+    shape = pitch_class_set(pitches)
+    lowest = min(pitches) % PITCH_CLASSES
+    return lowest * count(len(shape), PITCH_CLASSES) + index_of(shape, PITCH_CLASSES) + 1
 
 
 def _check_size(size: int, keys: int) -> None:

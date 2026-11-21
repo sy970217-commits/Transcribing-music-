@@ -21,7 +21,7 @@ def test_each_onset_takes_everything_still_sounding():
 def test_sets_are_counted_in_both_forms():
     chord = (q(48, 0, 1), q(64, 0, 1), q(67, 0, 1), q(60, 1, 1), q(64, 1, 1), q(67, 1, 1))
 
-    assert count_sets(chord) == {((0, 16, 19), (0, 4, 7)): 1, ((0, 4, 7), (0, 4, 7)): 1}
+    assert count_sets(chord) == {((0, 16, 19), (0, 4, 7), 0, 30): 1, ((0, 4, 7), (0, 4, 7), 0, 30): 1}
 
 
 def test_cli_writes_csv_with_sheet_column(tmp_path):
@@ -36,7 +36,13 @@ def test_cli_writes_csv_with_sheet_column(tmp_path):
     assert main([str(path), "--output-dir", str(tmp_path)]) == 0
 
     rows = list(csv.DictReader((tmp_path / "song_음높이묶음.csv").open(encoding="utf-8-sig")))
-    # (0,4,7): 둘째 음이 1·2·3인 묶음(10+9+8=27개) 다음, (0,4,5)·(0,4,6) 다음 → 시트 '음높이 3개'의 30번째 열
+    # (0,4,7): 둘째 음이 1·2·3인 묶음(10+9+8=27개) 다음, (0,4,5)·(0,4,6) 다음 → 맨 아래 도(0) 블록의 30번
     assert rows == [
-        {"파트": "피아노", "음개수": "3", "88건반_묶음": "0,4,7", "88건반_번호": "258", "12음_묶음": "0,4,7", "12음_시트열": "30", "횟수": "2"}
+        {"파트": "피아노", "음개수": "3", "88건반_묶음": "0,4,7", "88건반_번호": "258", "12음_묶음": "0,4,7", "12음_맨아래": "0", "12음_시트번호": "30", "횟수": "2"}
     ]
+
+
+def test_sheet_number_uses_the_lowest_note_block():
+    d_major = (q(62, 0, 1), q(66, 0, 1), q(69, 0, 1))  # 레·파#·라 → 맨 아래 레(2) 블록
+
+    assert count_sets(d_major) == {((0, 4, 7), (0, 4, 7), 2, 2 * 55 + 30): 1}

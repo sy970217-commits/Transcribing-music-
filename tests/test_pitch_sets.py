@@ -3,7 +3,7 @@ import random
 
 import pytest
 
-from transcriber.pitch_sets import count, from_midi, index_of, iter_sets, pitch_class_set, set_at
+from transcriber.pitch_sets import count, from_midi, index_of, iter_sets, pitch_class_set, set_at, sheet_number
 
 
 def test_twelve_tone_counts_match_the_sheets():
@@ -52,3 +52,14 @@ def test_rejects_bad_input():
         from_midi((20, 60))  # 피아노 범위 밖
     with pytest.raises(ValueError):
         count(13, keys=12)
+
+
+def test_sheet_number_includes_the_lowest_note_block():
+    # 시트 '음높이 3개 (660)': 맨 아래 0 블록 1~55, 맨 아래 1 블록 56~110 …
+    assert sheet_number((60, 61, 62)) == 1  # 도·도#·레 → (0,1,2), 맨 아래 0
+    assert sheet_number((61, 62, 63)) == 56  # 도#·레·레# → 맨 아래 1 블록의 첫 번째
+    assert sheet_number((47, 52, 55)) == 11 * 55 + index_of((0, 5, 8), keys=12) + 1  # 시(B2)가 맨 아래
+    # 1개·2개 파일도 같은 규칙: 1개는 음이름+1, 2개는 맨 아래 블록 × 11 + 간격
+    assert sheet_number((64,)) == 5
+    assert sheet_number((62, 66)) == 2 * 11 + 4
+    assert sheet_number(tuple(range(60, 72))) == 1 and sheet_number(tuple(range(61, 73))) == 2
