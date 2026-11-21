@@ -396,12 +396,12 @@ def _set_staff_distances(path: Path) -> None:
     """단 사이 간격을 MusicXML에 적는다(music21은 이 값을 쓰지 않음).
 
     - 공통 설정(<defaults>): 피아노 두 단 사이(number="2")만. C4 위치를 맞추는 가장 중요한 값.
-    - 피아노 첫 마디(<print>): 멜로디와 피아노 사이(number="1")와 피아노 두 단 사이를 함께 적는다.
+    - 피아노 모든 마디(<print>): 멜로디와 피아노 사이(number="1")와 피아노 두 단 사이를 함께 적는다.
       공통 설정에 number="1"을 넣으면 Finale가 피아노 두 단 사이에도 적용할 수 있어서 피아노에만 적는다.
     """
     text = path.read_text(encoding="utf-8")
     text = _insert_into_defaults(text, _staff_layout_xml(2, GRAND_STAFF_DISTANCE_TENTHS, indent=4))
-    text = _insert_piano_first_print(text)
+    text = _insert_piano_prints(text)
     path.write_text(text, encoding="utf-8")
 
 
@@ -425,22 +425,27 @@ def _insert_into_defaults(text: str, xml: str) -> str:
     return text[:line_start] + xml + text[line_start:]
 
 
-def _insert_piano_first_print(text: str) -> str:
-    """피아노(두 단 악기) 첫 마디 맨 앞에 <print>로 간격을 적는다. 멜로디가 없으면 할 일 없음."""
+def _insert_piano_prints(text: str) -> str:
+    """피아노(두 단 악기)의 모든 마디 맨 앞에 <print>로 간격을 적는다. 멜로디가 없으면 할 일 없음.
+
+    Finale는 줄(시스템)이 시작하는 마디의 값을 쓰는데, 어느 마디에서 줄이 바뀔지 미리 알 수 없으므로
+    모든 마디에 적어서 어느 줄이든 간격이 똑같게 한다.
+    """
     parts = list(re.finditer(r"<part id=[^>]*>", text))
     if len(parts) < 2:
         return text  # 피아노만 있으면 피아노가 맨 위라 멜로디와의 간격이 필요 없다
     piano = next((p for p in parts if "<staves>2</staves>" in text[p.end() : text.find("</part>", p.end())]), None)
     if piano is None:
         return text
-    first_measure = re.compile(r"<measure[^>]*>\n").search(text, piano.end())
+    piano_end = text.find("</part>", piano.end())
     print_xml = (
         "      <print>\n"
         + _staff_layout_xml(1, MELODY_TO_PIANO_DISTANCE_TENTHS, indent=8)
         + _staff_layout_xml(2, GRAND_STAFF_DISTANCE_TENTHS, indent=8)
         + "      </print>\n"
     )
-    return text[: first_measure.end()] + print_xml + text[first_measure.end() :]
+    body = re.sub(r"(<measure[^>]*>\n)", lambda m: m.group(1) + print_xml, text[piano.end() : piano_end])
+    return text[: piano.end()] + body + text[piano_end:]
 
 
 def _show_needed_accidentals(part: stream.Part) -> None:

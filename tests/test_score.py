@@ -219,12 +219,13 @@ def test_grand_staff_distance_is_set(tmp_path):
     assert len(converter.parse(str(path)).parts) == 2  # 파일이 여전히 올바르게 읽힘
 
 
-def test_melody_to_piano_distance_only_in_piano_first_measure(tmp_path):
-    melody = (q(72, 0), q(74, 1))
-    path = save_musicxml(build_score((q(C4, 0), q(C3, 0)), tempo_bpm=90, melody=melody), tmp_path / "s.musicxml")
+def test_melody_to_piano_distance_in_every_piano_measure(tmp_path):
+    melody = (q(72, 0), q(74, 5))  # 2마디
+    path = save_musicxml(build_score((q(C4, 0), q(C3, 5)), tempo_bpm=90, melody=melody), tmp_path / "s.musicxml")
     xml = path.read_text(encoding="utf-8")
 
     melody_part, piano_part = re.findall(r"<part id=.*?</part>", xml, re.S)
+    assert piano_part.count("<print>") == piano_part.count("<measure ") == 2  # 어느 줄이든 간격이 같게
     piano_print = piano_part.split("<print>")[1].split("</print>")[0]
     assert "<print>" not in melody_part
     assert piano_print.count("<staff-layout") == 2
