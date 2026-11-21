@@ -16,6 +16,7 @@ dependencies = [
 transcribe = "transcriber.cli:main"
 render = "transcriber.render:main"
 rhythm-stats = "transcriber.rhythm_stats:main"
+chord-stats = "transcriber.chord_stats:main"
 
 [dependency-groups]
 dev = ["pytest>=8"]
