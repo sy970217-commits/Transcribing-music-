@@ -134,3 +134,16 @@ def test_rests_are_fixed_at_standard_positions_even_with_two_voices(tmp_path):
         else:
             expected = ("D", "5") if whole else ("B", "4")
         assert f"<display-step>{expected[0]}</display-step><display-octave>{expected[1]}" in n
+
+
+def test_empty_measure_has_a_single_whole_rest(tmp_path):
+    # 멜로디: 1마디는 비고 2마디에 음 / 피아노: 두 성부(길게 누른 음 + 위 음)
+    melody = (q(72, 4, 4),)
+    piano = (q(48, 0, 4), q(55, 1), q(52, 3), q(48, 4, 4))
+    xml = save_musicxml(build_score(piano, tempo_bpm=90, melody=melody, allow_voices=True), tmp_path / "s.musicxml")
+    melody_part = part_xml(xml.read_text(encoding="utf-8"), 0)
+
+    first = re.search(r'<measure[^>]*number="1".*?</measure>', melody_part, re.S).group(0)
+    rests = re.findall(r"<note\b[^>]*>.*?</note>", first, re.S)
+    assert len(rests) == 1 and 'measure="yes"' in rests[0]
+    assert "<backup>" not in first  # 성부가 하나로 합쳐짐

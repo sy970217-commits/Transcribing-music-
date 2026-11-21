@@ -33,7 +33,7 @@ from transcriber.meters import (
     parse_time_signature,
 )
 from transcriber.dynamics_marks import DynamicMark, plan_dynamics
-from transcriber.engraving import place_marks, standard_rest_positions
+from transcriber.engraving import collapse_empty_measures, place_marks, standard_rest_positions
 from transcriber.harmony_marks import attach_chord_symbols
 from transcriber.page_layout import apply_page_layout
 from transcriber.pedals import PedalSpan, attach_pedals
@@ -388,6 +388,7 @@ def save_musicxml(score: stream.Score, output_path: str | Path, measures_per_lin
     notated = score.makeNotation()
     for part in notated.parts:
         _add_double_barlines(part)
+        collapse_empty_measures(part)  # 빈 마디는 온쉼표 하나만
         _number_voices(part)
         _show_needed_accidentals(part)
     place_marks(notated)  # 기호가 겹치지 않게: 피아노 두 단 사이에는 두지 않는다

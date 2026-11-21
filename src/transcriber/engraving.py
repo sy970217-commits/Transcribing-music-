@@ -5,13 +5,14 @@
 - 멜로디 단: 아래에는 가사가 있으므로 셋잇단 숫자·셈여림·글자 표시는 위에
 - 피아노 위 단(높은음자리표): 위에. 기둥(stem)은 성부와 상관없이 모두 위로
 - 피아노 아래 단(낮은음자리표): 아래에. 기둥은 성부와 상관없이 모두 아래로
+- 빈 마디: 음이 하나도 없는 마디(단마다)는 온쉼표(마디 전체 쉼표) 하나만 둔다
 - 쉼표: 성부가 몇 개든 표준 위치에 고정한다(standard_rest_positions). 위치를 적지 않으면
   Finale가 성부마다 쉼표를 위아래로 옮긴다.
 """
 
 import re
 
-from music21 import dynamics, expressions, stream
+from music21 import dynamics, expressions, harmony, note, stream
 
 from transcriber.stem_lengths import shorten_blocking_stems
 
@@ -75,3 +76,28 @@ def _fix_rest(match: re.Match) -> str:
         f"<display-step>{step}</display-step><display-octave>{octave}</display-octave></rest>"
     )
     return note_xml.replace(rest.group(0), placed, 1)
+
+
+def collapse_empty_measures(part: stream.Part) -> None:
+    """음이 하나도 없는 마디는 쉼표를 모두 지우고 온쉼표(마디 전체 쉼표) 하나만 둔다.
+
+    성부가 둘로 나뉜 마디는 성부마다 쉼표가 생겨 빈 마디에 쉼표가 겹쳐 보이므로 하나로 합친다.
+    코드 기호·셈여림 같은 다른 기호는 그대로 둔다.
+    """
+    for measure in part.getElementsByClass(stream.Measure):
+        if any(_is_sounding(e) for e in measure.recurse().notes):
+            continue
+        for voice in list(measure.voices):
+            for element in list(voice):
+                if not isinstance(element, note.Rest):
+                    measure.insert(voice.offset + element.offset, element)
+            measure.remove(voice)
+        for rest in list(measure.getElementsByClass(note.Rest)):
+            measure.remove(rest)
+        whole = note.Rest(quarterLength=measure.barDuration.quarterLength)
+        whole.fullMeasure = True
+        measure.insert(0, whole)
+
+
+def _is_sounding(element) -> bool:
+    return not isinstance(element, harmony.ChordSymbol)
