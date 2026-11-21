@@ -241,7 +241,25 @@ def test_piano_alone_has_no_melody_distance(tmp_path):
         encoding="utf-8"
     )
 
-    assert "<print>" not in xml
+    assert '<staff-layout number="1">' not in xml  # 피아노가 맨 위라 위 파트와의 간격이 없다
+    assert '<staff-layout number="2">' in xml
+
+
+def test_every_measure_gets_a_fixed_width_so_lines_keep_their_measure_count(tmp_path):
+    from transcriber.page_layout import measure_widths
+
+    piano = (q(C4, 0), q(C3, 33))  # 9마디, 피아노만
+    xml = save_musicxml(build_score(piano, tempo_bpm=90), tmp_path / "s.musicxml", measures_per_line=4).read_text(
+        encoding="utf-8"
+    )
+
+    first, rest = measure_widths(4)
+    widths = re.findall(r'<measure width="(\d+)"', xml)
+    assert widths == [str(first)] * 4 + [str(rest)] * 5  # 첫 줄은 악기 이름 자리만큼 좁게
+    assert xml.count('<print new-system="yes"') == 2  # 피아노만 있어도 5·9마디에서 줄 바꿈
+    defaults = xml.split("<defaults>")[1].split("</defaults>")[0]
+    assert defaults.index("<page-layout>") < defaults.index("<system-layout>") < defaults.index("<staff-layout")
+    assert len(converter.parse(str(tmp_path / "s.musicxml")).parts) == 2
 
 
 def test_no_double_barline_without_changes(tmp_path):

@@ -1,7 +1,6 @@
 """박자 정리된 음으로 피아노 악보(MusicXML)를 만드는 모듈. music21을 사용한다."""
 
 import math
-import re
 from collections import Counter
 from dataclasses import dataclass
 from fractions import Fraction
@@ -35,6 +34,7 @@ from transcriber.meters import (
 )
 from transcriber.dynamics_marks import DynamicMark, plan_dynamics
 from transcriber.engraving import place_marks
+from transcriber.page_layout import apply_page_layout
 from transcriber.pedals import PedalSpan, attach_pedals
 from transcriber.spelling import respell_part
 from transcriber.tempo_marks import TempoChange, TempoMark, plan_tempo_marks
@@ -390,94 +390,8 @@ def save_musicxml(score: stream.Score, output_path: str | Path, measures_per_lin
         _show_needed_accidentals(part)
     place_marks(notated)  # 기호가 겹치지 않게: 피아노 두 단 사이에는 두지 않는다
     written = Path(notated.write("musicxml", fp=str(path)))
-    _set_staff_distances(written, measures_per_line)
+    apply_page_layout(written, measures_per_line)  # 용지·줄 바꿈·마디 폭·단 간격
     return written
-
-
-# 피아노 두 단 사이 간격(1칸 = 10). 높은음자리표의 C4(아래 덧줄 1개)와 낮은음자리표의 C4(위 덧줄 1개)가
-# 같은 높이에 오도록: 위 단 아래로 1칸 + 아래 단 위로 1칸 = 2칸
-GRAND_STAFF_DISTANCE_TENTHS = 20
-# 멜로디 단과 피아노 위 단 사이: 가사·셈여림·셋잇단 숫자가 들어갈 자리로 12칸
-MELODY_TO_PIANO_DISTANCE_TENTHS = 120
-DEFAULTS_ORDER_AFTER_STAFF_LAYOUT = ("<appearance", "<music-font", "<word-font", "<lyric-font", "<lyric-language")
-
-
-def _set_staff_distances(path: Path, measures_per_line: int) -> None:
-    """단 사이 간격을 MusicXML에 적는다(music21은 이 값을 쓰지 않음).
-
-    - 공통 설정(<defaults>): 피아노 두 단 사이(number="2")만. C4 위치를 맞추는 가장 중요한 값.
-    - 줄이 시작하는 마디(<print>): 멜로디와 피아노 사이(number="1")와 피아노 두 단 사이를 함께 적는다.
-      공통 설정에 number="1"을 넣으면 Finale가 피아노 두 단 사이에도 적용할 수 있어서 피아노에만 적는다.
-    """
-    text = path.read_text(encoding="utf-8")
-    text = _insert_into_defaults(text, _staff_layout_xml(2, GRAND_STAFF_DISTANCE_TENTHS, indent=4))
-    text = _insert_piano_prints(text, measures_per_line)
-    path.write_text(text, encoding="utf-8")
-
-
-def _staff_layout_xml(number: int, distance: int, indent: int) -> str:
-    pad = " " * indent
-    return (
-        f'{pad}<staff-layout number="{number}">\n'
-        f"{pad}  <staff-distance>{distance}</staff-distance>\n"
-        f"{pad}</staff-layout>\n"
-    )
-
-
-def _insert_into_defaults(text: str, xml: str) -> str:
-    defaults_end = text.find("</defaults>")
-    if defaults_end == -1:
-        return text
-    defaults_start = text.find("<defaults>")
-    later = [text.find(tag, defaults_start, defaults_end) for tag in DEFAULTS_ORDER_AFTER_STAFF_LAYOUT]
-    insert_at = min([i for i in later if i != -1], default=defaults_end)
-    line_start = text.rfind("\n", 0, insert_at) + 1
-    return text[:line_start] + xml + text[line_start:]
-
-
-def _insert_piano_prints(text: str, measures_per_line: int) -> str:
-    """줄(시스템)을 measures_per_line 마디마다 바꾸고, 줄마다 피아노 단 간격을 적는다. 멜로디가 없으면 할 일 없음.
-
-    Finale는 줄이 바뀌는 표시(new-system)가 있는 마디의 간격만 쓰고, 공통 설정의 간격은 단 번호와 상관없이
-    모든 단에 똑같이 쓴다. 그래서 줄 바꿈을 직접 정하고 그 마디마다 간격을 적어 모든 줄이 같게 한다.
-    """
-    parts = list(re.finditer(r"<part id=[^>]*>", text))
-    if len(parts) < 2:
-        return text  # 피아노만 있으면 피아노가 맨 위라 멜로디와의 간격이 필요 없다
-    if not any("<staves>2</staves>" in _part_body(text, p) for p in parts):
-        return text
-    pieces, last = [], 0
-    for part in parts:
-        body = _part_body(text, part)
-        layouts = None
-        if "<staves>2</staves>" in body:
-            layouts = _staff_layout_xml(1, MELODY_TO_PIANO_DISTANCE_TENTHS, indent=8) + _staff_layout_xml(
-                2, GRAND_STAFF_DISTANCE_TENTHS, indent=8
-            )
-        pieces += [text[last : part.end()], _add_system_prints(body, layouts, measures_per_line)]
-        last = part.end() + len(body)
-    return "".join(pieces) + text[last:]
-
-
-def _part_body(text: str, part: re.Match) -> str:
-    return text[part.end() : text.find("</part>", part.end())]
-
-
-def _add_system_prints(body: str, layouts: str | None, measures_per_line: int) -> str:
-    """마디마다 줄 바꿈 표시와 (피아노라면) 단 간격을 맨 앞에 넣는다."""
-    counter = iter(range(len(body)))
-
-    def add(match: re.Match) -> str:
-        index = next(counter)
-        new_system = index > 0 and index % measures_per_line == 0
-        if not new_system and not (index == 0 and layouts):
-            return match.group(1)
-        attribute = ' new-system="yes"' if new_system else ""
-        if layouts is None:
-            return match.group(1) + f"      <print{attribute} />\n"
-        return match.group(1) + f"      <print{attribute}>\n" + layouts + "      </print>\n"
-
-    return re.sub(r"(<measure[^>]*>\n)", add, body)
 
 
 def _show_needed_accidentals(part: stream.Part) -> None:
