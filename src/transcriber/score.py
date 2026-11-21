@@ -395,6 +395,7 @@ def save_musicxml(score: stream.Score, output_path: str | Path) -> Path:
 GRAND_STAFF_DISTANCE_TENTHS = 20
 # 멜로디 단과 피아노 위 단 사이: 가사·셈여림·셋잇단 숫자가 들어갈 자리로 12칸
 MELODY_TO_PIANO_DISTANCE_TENTHS = 120
+MEASURES_PER_SYSTEM = 4  # 한 줄에 4마디
 DEFAULTS_ORDER_AFTER_STAFF_LAYOUT = ("<appearance", "<music-font", "<word-font", "<lyric-font", "<lyric-language")
 
 
@@ -402,7 +403,7 @@ def _set_staff_distances(path: Path) -> None:
     """단 사이 간격을 MusicXML에 적는다(music21은 이 값을 쓰지 않음).
 
     - 공통 설정(<defaults>): 피아노 두 단 사이(number="2")만. C4 위치를 맞추는 가장 중요한 값.
-    - 피아노 모든 마디(<print>): 멜로디와 피아노 사이(number="1")와 피아노 두 단 사이를 함께 적는다.
+    - 줄이 시작하는 마디(<print>): 멜로디와 피아노 사이(number="1")와 피아노 두 단 사이를 함께 적는다.
       공통 설정에 number="1"을 넣으면 Finale가 피아노 두 단 사이에도 적용할 수 있어서 피아노에만 적는다.
     """
     text = path.read_text(encoding="utf-8")
@@ -432,26 +433,48 @@ def _insert_into_defaults(text: str, xml: str) -> str:
 
 
 def _insert_piano_prints(text: str) -> str:
-    """피아노(두 단 악기)의 모든 마디 맨 앞에 <print>로 간격을 적는다. 멜로디가 없으면 할 일 없음.
+    """줄(시스템)을 MEASURES_PER_SYSTEM 마디마다 바꾸고, 줄마다 피아노 단 간격을 적는다. 멜로디가 없으면 할 일 없음.
 
-    Finale는 줄(시스템)이 시작하는 마디의 값을 쓰는데, 어느 마디에서 줄이 바뀔지 미리 알 수 없으므로
-    모든 마디에 적어서 어느 줄이든 간격이 똑같게 한다.
+    Finale는 줄이 바뀌는 표시(new-system)가 있는 마디의 간격만 쓰고, 공통 설정의 간격은 단 번호와 상관없이
+    모든 단에 똑같이 쓴다. 그래서 줄 바꿈을 직접 정하고 그 마디마다 간격을 적어 모든 줄이 같게 한다.
     """
     parts = list(re.finditer(r"<part id=[^>]*>", text))
     if len(parts) < 2:
         return text  # 피아노만 있으면 피아노가 맨 위라 멜로디와의 간격이 필요 없다
-    piano = next((p for p in parts if "<staves>2</staves>" in text[p.end() : text.find("</part>", p.end())]), None)
-    if piano is None:
+    if not any("<staves>2</staves>" in _part_body(text, p) for p in parts):
         return text
-    piano_end = text.find("</part>", piano.end())
-    print_xml = (
-        "      <print>\n"
-        + _staff_layout_xml(1, MELODY_TO_PIANO_DISTANCE_TENTHS, indent=8)
-        + _staff_layout_xml(2, GRAND_STAFF_DISTANCE_TENTHS, indent=8)
-        + "      </print>\n"
-    )
-    body = re.sub(r"(<measure[^>]*>\n)", lambda m: m.group(1) + print_xml, text[piano.end() : piano_end])
-    return text[: piano.end()] + body + text[piano_end:]
+    pieces, last = [], 0
+    for part in parts:
+        body = _part_body(text, part)
+        layouts = None
+        if "<staves>2</staves>" in body:
+            layouts = _staff_layout_xml(1, MELODY_TO_PIANO_DISTANCE_TENTHS, indent=8) + _staff_layout_xml(
+                2, GRAND_STAFF_DISTANCE_TENTHS, indent=8
+            )
+        pieces += [text[last : part.end()], _add_system_prints(body, layouts)]
+        last = part.end() + len(body)
+    return "".join(pieces) + text[last:]
+
+
+def _part_body(text: str, part: re.Match) -> str:
+    return text[part.end() : text.find("</part>", part.end())]
+
+
+def _add_system_prints(body: str, layouts: str | None) -> str:
+    """마디마다 줄 바꿈 표시와 (피아노라면) 단 간격을 맨 앞에 넣는다."""
+    counter = iter(range(len(body)))
+
+    def add(match: re.Match) -> str:
+        index = next(counter)
+        new_system = index > 0 and index % MEASURES_PER_SYSTEM == 0
+        if not new_system and not (index == 0 and layouts):
+            return match.group(1)
+        attribute = ' new-system="yes"' if new_system else ""
+        if layouts is None:
+            return match.group(1) + f"      <print{attribute} />\n"
+        return match.group(1) + f"      <print{attribute}>\n" + layouts + "      </print>\n"
+
+    return re.sub(r"(<measure[^>]*>\n)", add, body)
 
 
 def _show_needed_accidentals(part: stream.Part) -> None:

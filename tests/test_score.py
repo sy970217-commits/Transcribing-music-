@@ -219,15 +219,18 @@ def test_grand_staff_distance_is_set(tmp_path):
     assert len(converter.parse(str(path)).parts) == 2  # 파일이 여전히 올바르게 읽힘
 
 
-def test_melody_to_piano_distance_in_every_piano_measure(tmp_path):
-    melody = (q(72, 0), q(74, 5))  # 2마디
-    path = save_musicxml(build_score((q(C4, 0), q(C3, 5)), tempo_bpm=90, melody=melody), tmp_path / "s.musicxml")
+def test_every_system_starts_with_the_same_distances(tmp_path):
+    melody = (q(72, 0), q(74, 33))  # 9마디 → 3줄(1·5·9마디)
+    path = save_musicxml(build_score((q(C4, 0), q(C3, 33)), tempo_bpm=90, melody=melody), tmp_path / "s.musicxml")
     xml = path.read_text(encoding="utf-8")
 
     melody_part, piano_part = re.findall(r"<part id=.*?</part>", xml, re.S)
-    assert piano_part.count("<print>") == piano_part.count("<measure ") == 2  # 어느 줄이든 간격이 같게
+    assert melody_part.count('<print new-system="yes" />') == 2  # 5·9마디에서 줄 바꿈
+    assert piano_part.count('<print new-system="yes">') == 2
+    assert piano_part.count('<staff-layout number="1">') == 3  # 1·5·9마디 모두 같은 간격
+    assert piano_part.count('<staff-layout number="2">') == 3
+    assert len(converter.parse(str(path)).parts) == 3  # 파일이 여전히 올바르게 읽힘
     piano_print = piano_part.split("<print>")[1].split("</print>")[0]
-    assert "<print>" not in melody_part
     assert piano_print.count("<staff-layout") == 2
     assert '<staff-layout number="1">\n          <staff-distance>120' in piano_print
     assert '<staff-layout number="2">\n          <staff-distance>20' in piano_print
