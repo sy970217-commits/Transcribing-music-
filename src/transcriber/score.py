@@ -28,6 +28,7 @@ from transcriber.meters import (
     normalize_changes,
     parse_time_signature,
 )
+from transcriber.spelling import respell_part
 from transcriber.tempo_marks import TempoChange, TempoMark, plan_tempo_marks
 
 MIDDLE_C = 60  # 가운데 도. 이 음 이상은 오른손(높은음자리표), 아래는 왼손(낮은음자리표)
@@ -107,6 +108,8 @@ def build_score(
     for start, song_key in _resolve_keys(notes + melody, bar_beats, info.key_name, melody):
         for part in score.parts:
             part.insert(start, key.Key(song_key.tonic, song_key.mode))
+    for part in score.parts:
+        respell_part(part)  # 가장조의 D♯처럼, 음 이름을 조에 맞게
     score.metadata = _build_metadata(info)
     return score
 

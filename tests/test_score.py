@@ -125,6 +125,16 @@ def test_key_change_measure_number_counts_three_four():
     assert "17마디부터" in key_name_of(build_score(notes, tempo_bpm=90, time_signatures=three))
 
 
+def test_notes_are_spelled_for_the_key(tmp_path):
+    # 가장조 음계 + D♯(63) 하나: E♭이 아니라 D♯으로 적혀야 한다
+    notes = repeat_scale(A_MAJOR_SCALE, 4) + (q(63, 16),)
+    score = build_score(notes, tempo_bpm=90, info=ScoreInfo(key_name="A"))
+
+    xml = save_musicxml(score, tmp_path / "s.musicxml").read_text(encoding="utf-8")
+    assert "<step>D</step>\n          <alter>1</alter>" in xml
+    assert "<step>E</step>\n          <alter>-1</alter>" not in xml
+
+
 def test_overlapping_notes_do_not_create_tie_fragments():
     # 길게 누른 도 위에 미, 솔이 차례로 들어오는 경우
     notes = (q(C4, 0, length=3), q(E4, 1), q(G4, 2))
