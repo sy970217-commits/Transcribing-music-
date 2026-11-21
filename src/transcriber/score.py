@@ -7,6 +7,7 @@ from fractions import Fraction
 from pathlib import Path
 
 from music21 import (
+    bar,
     chord,
     clef,
     dynamics,
@@ -340,11 +341,28 @@ def _build_metadata(info: ScoreInfo) -> metadata.Metadata:
 
 
 def save_musicxml(score: stream.Score, output_path: str | Path) -> Path:
-    """악보를 MusicXML 파일로 저장한다. 폴더가 없으면 만든다."""
+    """악보를 MusicXML 파일로 저장한다. 폴더가 없으면 만든다.
+
+    마디로 나눈 뒤, 조표나 박자표가 바뀌기 직전 마디 끝에 겹세로줄(‖)을 긋는다.
+    """
     path = Path(output_path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    written = score.write("musicxml", fp=str(path))
+    notated = score.makeNotation()
+    for part in notated.parts:
+        _add_double_barlines(part)
+    written = notated.write("musicxml", fp=str(path))
     return Path(written)
+
+
+def _add_double_barlines(part: stream.Part) -> None:
+    measures = list(part.getElementsByClass(stream.Measure))
+    for previous, measure in zip(measures, measures[1:]):
+        starts_new_section = any(
+            element.offset == 0
+            for element in measure.getElementsByClass((key.KeySignature, meter.TimeSignature))
+        )
+        if starts_new_section and previous.rightBarline is None:
+            previous.rightBarline = bar.Barline("double")
 
 
 def _build_part(

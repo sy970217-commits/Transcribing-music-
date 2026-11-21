@@ -135,6 +135,27 @@ def test_notes_are_spelled_for_the_key(tmp_path):
     assert "<step>E</step>\n          <alter>-1</alter>" not in xml
 
 
+def test_double_barline_before_key_change(tmp_path):
+    notes = repeat_scale(G_MAJOR_SCALE, 16) + repeat_scale(A_MAJOR_SCALE, 16, start_beat=64)
+
+    xml = save_musicxml(build_score(notes, tempo_bpm=90), tmp_path / "s.musicxml").read_text(encoding="utf-8")
+
+    # 피아노 2단 × (16마디 끝 겹세로줄 1개) + 곡 끝 세로줄은 light-heavy
+    assert xml.count("<bar-style>light-light</bar-style>") == 2
+    import re
+
+    measure_16 = re.search(r'<measure[^>]*number="16".*?</measure>', xml, re.S).group(0)
+    assert "light-light" in measure_16
+
+
+def test_no_double_barline_without_changes(tmp_path):
+    xml = save_musicxml(build_score(repeat_scale(G_MAJOR_SCALE, 8), 90), tmp_path / "s.musicxml").read_text(
+        encoding="utf-8"
+    )
+
+    assert "light-light" not in xml
+
+
 def test_overlapping_notes_do_not_create_tie_fragments():
     # 길게 누른 도 위에 미, 솔이 차례로 들어오는 경우
     notes = (q(C4, 0, length=3), q(E4, 1), q(G4, 2))
