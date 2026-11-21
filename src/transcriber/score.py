@@ -24,7 +24,7 @@ from music21 import (
 )
 
 from transcriber.lyrics import attach_lyrics
-from transcriber.rhythm import QuantizedNote
+from transcriber.rhythm import MIDDLE_C, QuantizedNote
 from transcriber.meters import (
     TimeSignatureChange,
     bar_length,
@@ -41,7 +41,6 @@ from transcriber.spelling import respell_part
 from transcriber.tempo_marks import TempoChange, TempoMark, plan_tempo_marks
 from transcriber.voices import VoicedChord, split_voices
 
-MIDDLE_C = 60  # 가운데 도. 이 음 이상은 오른손(높은음자리표), 아래는 왼손(낮은음자리표)
 KEY_WINDOW_MEASURES = 4  # 조성을 이 마디 수씩 끊어서 찾는다
 MIN_KEY_RUN_WINDOWS = 3  # 같은 조표가 3창(12마디) 이상 이어져야 조바꿈으로 인정
 MIN_NOTES_FOR_KEY = 8  # 한 창에 음이 이보다 적으면 조성을 판단하지 않는다

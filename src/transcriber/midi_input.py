@@ -15,6 +15,7 @@ from transcriber.rhythm import (
     DEFAULT_TEMPO_BPM,
     BeatNote,
     QuantizedNote,
+    MIDDLE_C,
     quantize_beat_notes,
 )
 from transcriber.meters import TimeSignatureChange, normalize_changes
@@ -69,7 +70,8 @@ def read_midi(path: str | Path, subdivision: int = DEFAULT_SUBDIVISION) -> MidiS
     return MidiSong(
         tempo_bpm=_first_tempo(midi),
         melody=quantize_beat_notes(melody, subdivision),
-        accompaniment=quantize_beat_notes(accompaniment, subdivision),
+        # 피아노는 오른손·왼손 리듬이 다를 수 있어(예: 왼손 셋잇단, 오른손 8분음표) 손마다 따로 맞춘다
+        accompaniment=quantize_beat_notes(accompaniment, subdivision, split_pitch=MIDDLE_C),
         tempo_changes=_tempo_changes(midi, subdivision),
         time_signatures=_time_signatures(midi),
         pedals=read_pedals(midi, [t for t in tracks if t is not melody_track]),

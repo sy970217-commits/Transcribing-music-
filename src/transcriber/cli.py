@@ -12,7 +12,7 @@ from transcriber.audio_io import AudioLoadError, validate_audio_path
 from transcriber.midi_input import MidiLoadError, is_midi_file, read_midi
 from transcriber.pitch import Note, PitchDetectionError, detect_notes, save_midi
 from transcriber.lyrics import LyricsError, read_lyrics_file
-from transcriber.rhythm import QuantizedNote, estimate_tempo, quantize_notes
+from transcriber.rhythm import MIDDLE_C, QuantizedNote, estimate_tempo, quantize_notes
 from transcriber.score import ScoreInfo, build_score, key_name_of, save_musicxml
 from transcriber.vocal_melody import extract_vocal_parts
 
@@ -115,7 +115,8 @@ def _transcribe_audio(
 
     tempo = tempo_bpm if tempo_bpm is not None else estimate_tempo(source)
     melody = quantize_notes(melody_notes, tempo)
-    score = build_score(quantize_notes(pitch_result.notes, tempo), tempo, info, melody=melody)
+    piano = quantize_notes(pitch_result.notes, tempo, split_pitch=MIDDLE_C)  # 손마다 리듬을 따로 맞춤
+    score = build_score(piano, tempo, info, melody=melody)
 
     midi_path = save_midi(pitch_result, target_dir / f"{source.stem}.mid")
     musicxml_path = save_musicxml(score, target_dir / f"{source.stem}.musicxml", info.measures_per_line)
