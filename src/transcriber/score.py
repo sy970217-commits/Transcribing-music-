@@ -33,6 +33,7 @@ from transcriber.meters import (
     parse_time_signature,
 )
 from transcriber.dynamics_marks import DynamicMark, plan_dynamics
+from transcriber.engraving import place_marks
 from transcriber.pedals import PedalSpan, attach_pedals
 from transcriber.spelling import respell_part
 from transcriber.tempo_marks import TempoChange, TempoMark, plan_tempo_marks
@@ -376,6 +377,7 @@ def save_musicxml(score: stream.Score, output_path: str | Path) -> Path:
         _add_double_barlines(part)
         _number_voices(part)
         _show_needed_accidentals(part)
+    place_marks(notated)  # 기호가 겹치지 않게: 피아노 두 단 사이에는 두지 않는다
     written = Path(notated.write("musicxml", fp=str(path)))
     _set_grand_staff_distance(written)
     return written
