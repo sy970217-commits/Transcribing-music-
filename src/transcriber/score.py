@@ -161,11 +161,11 @@ def _attach_dynamics(part: stream.Part, marks: tuple[DynamicMark, ...]) -> None:
 
 
 def _attach_fermata(part: stream.Part, start: Fraction, end: Fraction) -> None:
-    """start~end 사이에 시작하는 음 중 가장 긴 음(같으면 앞의 음) 하나에 늘임표(𝄐)를 위쪽으로 붙인다."""
+    """start~end 사이에 시작하는 음 중 마지막 음(곡 끝이면 마지막 음) 하나에 늘임표(𝄐)를 위쪽으로 붙인다."""
     candidates = [n for n in part.flatten().notes if start <= n.offset < end]
     if not candidates:
         return
-    held = max(candidates, key=lambda n: (n.duration.quarterLength, -n.offset))
+    held = max(candidates, key=lambda n: n.offset)
     fermata = expressions.Fermata()
     fermata.type = "upright"  # 둥근 쪽이 위로 → 음표 위에 그린다
     held.expressions.append(fermata)

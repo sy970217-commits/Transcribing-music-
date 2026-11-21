@@ -96,3 +96,7 @@ def test_fermata_goes_above_melody_and_upper_staff_only(tmp_path):
     assert "".join(staff_notes(piano_part, 1)).count('<fermata type="upright"') == 1
     assert "<fermata" not in "".join(staff_notes(piano_part, 2))  # 두 단 사이엔 두지 않음
     assert 'type="inverted"' not in xml
+    last_melody_note = staff_notes(melody_part, 1)[-1] if "<staff>" in melody_part else re.findall(
+        r"<note[ >].*?</note>", melody_part, re.S
+    )[-1]
+    assert "<fermata" in last_melody_note  # 곡의 마지막 음에
