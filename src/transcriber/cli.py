@@ -84,7 +84,7 @@ def _transcribe_midi(
         pedals=song.pedals,
         allow_voices=True,  # MIDI는 음 길이가 정확해서 길게 누른 음을 2성부로 적을 수 있다
     )
-    musicxml_path = save_musicxml(score, target_dir / f"{source.stem}.musicxml")
+    musicxml_path = save_musicxml(score, target_dir / f"{source.stem}.musicxml", info.measures_per_line)
     return TranscriptionResult(
         musicxml_path=musicxml_path,
         midi_path=None,
@@ -118,7 +118,7 @@ def _transcribe_audio(
     score = build_score(quantize_notes(pitch_result.notes, tempo), tempo, info, melody=melody)
 
     midi_path = save_midi(pitch_result, target_dir / f"{source.stem}.mid")
-    musicxml_path = save_musicxml(score, target_dir / f"{source.stem}.musicxml")
+    musicxml_path = save_musicxml(score, target_dir / f"{source.stem}.musicxml", info.measures_per_line)
     return TranscriptionResult(
         musicxml_path=musicxml_path,
         midi_path=midi_path,
@@ -170,6 +170,12 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         default=None,
         help="가사 글 파일(.txt). 멜로디 음표에 한 글자씩 붙임. 길게 부르는 곳은 '-'",
     )
+    parser.add_argument(
+        "--measures-per-line",
+        type=int,
+        default=4,
+        help="악보 한 줄에 그릴 마디 수 (기본: 4)",
+    )
     return parser.parse_args(argv)
 
 
@@ -184,6 +190,7 @@ def main(argv: list[str] | None = None) -> int:
             key_name=args.key,
             lyrics=read_lyrics_file(args.lyrics) if args.lyrics else (),
             time_signature=args.time_signature,
+            measures_per_line=args.measures_per_line,
         )
         result = transcribe_file(args.audio, args.output_dir, args.tempo, info, args.vocals)
     except (AudioLoadError, MidiLoadError, LyricsError, PitchDetectionError, ValueError) as error:

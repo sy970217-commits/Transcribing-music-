@@ -382,3 +382,18 @@ def test_title_and_credits_are_saved(tmp_path):
 def test_empty_notes_raise_clear_error():
     with pytest.raises(ValueError, match="음이 없습니다"):
         build_score((), tempo_bpm=120)
+
+
+def test_measures_per_line_can_be_changed(tmp_path):
+    melody = (q(72, 0), q(74, 33))  # 9마디 → 3마디씩이면 3줄(1·4·7마디)
+    score = build_score((q(C4, 0), q(C3, 33)), tempo_bpm=90, melody=melody)
+    xml = save_musicxml(score, tmp_path / "s.musicxml", measures_per_line=3).read_text(encoding="utf-8")
+
+    melody_part = re.findall(r"<part id=.*?</part>", xml, re.S)[0]
+    starts = re.findall(r'<measure[^>]*number="(\d+)">\n\s*<print new-system="yes"', melody_part)
+    assert starts == ["4", "7"]
+
+
+def test_measures_per_line_must_be_positive(tmp_path):
+    with pytest.raises(ValueError):
+        save_musicxml(build_score((q(C4, 0),), tempo_bpm=90), tmp_path / "s.musicxml", measures_per_line=0)
