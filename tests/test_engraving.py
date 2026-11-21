@@ -117,13 +117,20 @@ def test_stem_stops_above_the_other_voice_note(tmp_path):
     assert shortened and all(float(y) == -40 for y in shortened)
 
 
-def test_eighth_rest_head_sits_in_the_fourth_space(tmp_path):
-    # 위 단: 8분쉼표 뒤 8분음표 / 아래 단: 같은 리듬
-    piano = (q(72, Fraction(1, 2), Fraction(1, 2)), q(48, Fraction(1, 2), Fraction(1, 2)))
-    piano_part = part_xml(build(tmp_path, piano), 0)
+def test_rests_are_fixed_at_standard_positions_even_with_two_voices(tmp_path):
+    # 위 단: 8분쉼표 뒤 8분음표 / 아래 단: 2성부(길게 누른 음 + 쉼표가 섞인 위 성부)
+    upper = (q(72, Fraction(1, 2), Fraction(1, 2)),)
+    lower = (q(48, 0, 4), q(55, 1), q(52, 3))
+    xml = save_musicxml(build_score(upper + lower, tempo_bpm=90, allow_voices=True), tmp_path / "s.musicxml")
+    piano_part = part_xml(xml.read_text(encoding="utf-8"), 0)
 
-    eighth_rests = [r for r in re.findall(r"<note>\s*<rest.*?</note>", piano_part, re.S) if "<type>eighth" in r]
-    upper = [r for r in eighth_rests if "<staff>1</staff>" in r]
-    lower = [r for r in eighth_rests if "<staff>2</staff>" in r]
-    assert upper and all("<display-step>D</display-step>" in r and "<display-octave>5" in r for r in upper)
-    assert lower and all("<display-step>F</display-step>" in r and "<display-octave>3" in r for r in lower)
+    rests = [n for n in re.findall(r"<note\b[^>]*>.*?</note>", piano_part, re.S) if "<rest" in n]
+    shown = [n for n in rests if 'print-object="no"' not in n.split(">", 1)[0]]
+    assert shown and all("<display-step>" in n for n in shown)
+    for n in shown:
+        whole = 'measure="yes"' in n or "<type>whole</type>" in n
+        if "<staff>2</staff>" in n:
+            expected = ("F", "3") if whole else ("D", "3")
+        else:
+            expected = ("D", "5") if whole else ("B", "4")
+        assert f"<display-step>{expected[0]}</display-step><display-octave>{expected[1]}" in n

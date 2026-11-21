@@ -5,16 +5,17 @@
 - 멜로디 단: 아래에는 가사가 있으므로 셋잇단 숫자·셈여림·글자 표시는 위에
 - 피아노 위 단(높은음자리표): 위에. 기둥(stem)은 성부와 상관없이 모두 위로
 - 피아노 아래 단(낮은음자리표): 아래에. 기둥은 성부와 상관없이 모두 아래로
-- 8분쉼표: 한 성부인 마디에서는 둥근 머리가 아래에서 4번째 칸에 오게 두 단계 올린다
-  (높은음자리표 미(E5) 칸, 낮은음자리표 솔(G3) 칸)
+- 쉼표: 성부가 몇 개든 표준 위치에 고정한다(standard_rest_positions). 위치를 적지 않으면
+  Finale가 성부마다 쉼표를 위아래로 옮긴다.
 """
 
-from music21 import dynamics, expressions, note, stream
+import re
+
+from music21 import dynamics, expressions, stream
 
 from transcriber.stem_lengths import shorten_blocking_stems
 
 ABOVE, BELOW = "above", "below"
-EIGHTH_REST_STEP_SHIFT = 2  # 기본(가운데 줄 기준) 위치에서 두 단계 위: 머리가 3번째 칸 → 4번째 칸
 UP, DOWN = "up", "down"
 
 
@@ -38,7 +39,6 @@ def _place_part(part: stream.Part, marks_side: str, stem: str | None) -> None:
     for element in part.recurse().notes:
         for tuplet in element.duration.tuplets:
             tuplet.placement = marks_side
-    _raise_eighth_rests(part)
     if stem is not None:
         for element in part.recurse().notes:  # 두 성부인 마디의 음까지 모두
             element.stemDirection = stem
@@ -48,11 +48,30 @@ def _place_part(part: stream.Part, marks_side: str, stem: str | None) -> None:
             shorten_blocking_stems(measure, stem, current_clef)  # 같은 방향 기둥이 다른 성부 음표를 가리지 않게
 
 
-def _raise_eighth_rests(part: stream.Part) -> None:
-    """한 성부인 마디의 8분쉼표를 머리가 4번째 칸에 오게 올린다. 두 성부 마디는 성부끼리 피하는 위치를 그대로 둔다."""
-    for measure in part.getElementsByClass(stream.Measure):
-        if measure.voices:
-            continue
-        for rest in measure.getElementsByClass(note.Rest):
-            if rest.duration.type == "eighth":
-                rest.stepShift = EIGHTH_REST_STEP_SHIFT
+
+# 쉼표 표준 위치(MusicXML display-step/octave). 온쉼표는 넷째 줄에 매달리고, 나머지는 가운데 줄 기준
+# (2분쉼표는 가운데 줄 위에 얹히고, 4·8·16·32분쉼표는 가운데에 걸친다)
+REST_POSITIONS = {
+    "treble": {"whole": ("D", 5), "other": ("B", 4)},
+    "bass": {"whole": ("F", 3), "other": ("D", 3)},
+}
+
+
+def standard_rest_positions(xml: str) -> str:
+    """보이는 쉼표마다 표준 위치를 적는다. 멜로디·피아노 위 단은 높은음자리표, 피아노 아래 단(staff 2)은 낮은음자리표."""
+    return re.sub(r"<note\b[^>]*>.*?</note>", _fix_rest, xml, flags=re.S)
+
+
+def _fix_rest(match: re.Match) -> str:
+    note_xml = match.group(0)
+    rest = re.search(r"<rest( measure=\"yes\")? />", note_xml)
+    if rest is None or 'print-object="no"' in note_xml.split(">", 1)[0]:
+        return note_xml
+    clef = "bass" if "<staff>2</staff>" in note_xml else "treble"
+    whole = rest.group(1) is not None or "<type>whole</type>" in note_xml
+    step, octave = REST_POSITIONS[clef]["whole" if whole else "other"]
+    placed = (
+        f"<rest{rest.group(1) or ''}>"
+        f"<display-step>{step}</display-step><display-octave>{octave}</display-octave></rest>"
+    )
+    return note_xml.replace(rest.group(0), placed, 1)
