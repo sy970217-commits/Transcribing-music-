@@ -379,26 +379,30 @@ def save_musicxml(score: stream.Score, output_path: str | Path) -> Path:
         _show_needed_accidentals(part)
     place_marks(notated)  # 기호가 겹치지 않게: 피아노 두 단 사이에는 두지 않는다
     written = Path(notated.write("musicxml", fp=str(path)))
-    _set_grand_staff_distance(written)
+    _set_staff_distances(written)
     return written
 
 
 # 피아노 두 단 사이 간격(1칸 = 10). 높은음자리표의 C4(아래 덧줄 1개)와 낮은음자리표의 C4(위 덧줄 1개)가
 # 같은 높이에 오도록: 위 단 아래로 1칸 + 아래 단 위로 1칸 = 2칸
 GRAND_STAFF_DISTANCE_TENTHS = 20
+# 멜로디 단과 피아노 위 단 사이: 가사·셈여림·셋잇단 숫자가 들어갈 자리로 12칸
+MELODY_TO_PIANO_DISTANCE_TENTHS = 120
 DEFAULTS_ORDER_AFTER_STAFF_LAYOUT = ("<appearance", "<music-font", "<word-font", "<lyric-font", "<lyric-language")
 
 
-def _set_grand_staff_distance(path: Path) -> None:
-    """MusicXML의 <defaults>에 피아노 두 단 사이 간격을 적는다(music21은 이 값을 쓰지 않음).
+def _set_staff_distances(path: Path) -> None:
+    """MusicXML의 <defaults>에 단 사이 간격을 적는다(music21은 이 값을 쓰지 않음).
 
-    number="2"는 '두 번째 단(낮은음자리표)과 그 위 단 사이'라는 뜻이다.
+    number="1": 각 악기의 첫 단과 그 위 악기 사이(피아노 위 단과 멜로디 사이). 맨 위 단에는 적용되지 않는다.
+    number="2": 악기 안의 두 번째 단과 그 위 단 사이(피아노 낮은음자리표 단과 높은음자리표 단 사이).
     """
     text = path.read_text(encoding="utf-8")
-    staff_layout = (
-        f'    <staff-layout number="2">\n'
-        f"      <staff-distance>{GRAND_STAFF_DISTANCE_TENTHS}</staff-distance>\n"
+    staff_layout = "".join(
+        f'    <staff-layout number="{number}">\n'
+        f"      <staff-distance>{distance}</staff-distance>\n"
         f"    </staff-layout>\n"
+        for number, distance in ((1, MELODY_TO_PIANO_DISTANCE_TENTHS), (2, GRAND_STAFF_DISTANCE_TENTHS))
     )
     defaults_end = text.find("</defaults>")
     if defaults_end == -1:

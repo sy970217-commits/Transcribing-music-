@@ -211,7 +211,10 @@ def test_grand_staff_distance_is_set(tmp_path):
 
     defaults = xml.split("<defaults>")[1].split("</defaults>")[0]
     assert '<staff-layout number="2">' in defaults
-    assert "<staff-distance>20</staff-distance>" in defaults  # 두 단의 C4 덧줄이 같은 높이
+    grand_staff = defaults.split('<staff-layout number="2">')[1].split("</staff-layout>")[0]
+    assert "<staff-distance>20</staff-distance>" in grand_staff  # 두 단의 C4 덧줄이 같은 높이(바꾸지 않음)
+    to_melody = defaults.split('<staff-layout number="1">')[1].split("</staff-layout>")[0]
+    assert "<staff-distance>120</staff-distance>" in to_melody  # 가사 자리를 위해 멜로디와 넓게
     assert defaults.index("</scaling>") < defaults.index("<staff-layout")  # MusicXML 순서 규칙
     assert len(converter.parse(str(path)).parts) == 2  # 파일이 여전히 올바르게 읽힘
 
