@@ -18,6 +18,7 @@ from music21 import (
     metadata,
     meter,
     note,
+    pitch,
     stream,
     tempo,
 )
@@ -374,8 +375,38 @@ def save_musicxml(score: stream.Score, output_path: str | Path) -> Path:
     for part in notated.parts:
         _add_double_barlines(part)
         _number_voices(part)
+        _show_needed_accidentals(part)
     written = notated.write("musicxml", fp=str(path))
     return Path(written)
+
+
+def _show_needed_accidentals(part: stream.Part) -> None:
+    """임시표(♯ ♭ ♮)는 꼭 필요한 곳에만 보이게 한다.
+
+    음마다 '지금 그 음(같은 이름·같은 옥타브)에 적용되는 값'과 비교한다.
+    적용되는 값은 조표, 또는 같은 마디 앞에서 나온 임시표다. 다를 때만 표시한다.
+    - 앞 마디의 임시표를 알려 주는 표시(친절 임시표)는 쓰지 않는다.
+    - 다른 옥타브의 같은 음에는 영향을 주지 않는다.
+    - 붙임줄로 이어지는 음에는 표시하지 않는다.
+    """
+    for measure in part.getElementsByClass(stream.Measure):
+        # 이 마디 맨 앞의 조표(1마디, 조바꿈 마디), 없으면 앞에서 이어지는 조표
+        signature = measure.keySignature or measure.getContextByClass(key.KeySignature)
+        from_signature = {p.step: p.alter for p in signature.alteredPitches} if signature else {}
+        in_effect: dict[tuple[str, int], float] = {}
+        for element in sorted(measure.recurse().notes, key=lambda e: e.getOffsetInHierarchy(measure)):
+            continues_tie = element.tie is not None and element.tie.type in ("continue", "stop")
+            for p in element.pitches:
+                position = (p.step, p.octave)
+                expected = in_effect.get(position, from_signature.get(p.step, 0.0))
+                in_effect[position] = p.alter
+                needed = p.alter != expected and not continues_tie
+                if needed and p.accidental is None:
+                    p.accidental = pitch.Accidental("natural")
+                if p.accidental is not None and p.alter == 0 and not needed:
+                    p.accidental = None  # 필요 없는 제자리표는 아예 지운다
+                elif p.accidental is not None:
+                    p.accidental.displayStatus = needed
 
 
 def _number_voices(part: stream.Part) -> None:

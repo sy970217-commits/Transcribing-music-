@@ -161,6 +161,48 @@ def test_piano_is_one_instrument_with_two_staves(tmp_path):
     assert "<octave>3</octave>" in b3 and "<staff>2</staff>" in b3
 
 
+def printed_accidentals(xml):
+    """마디별로 [(음이름+옥타브, 보이는 임시표)]"""
+    import re
+
+    result = {}
+    for number, body in re.findall(r'<measure[^>]*number="(\d+)"[^>]*>(.*?)</measure>', xml, re.S):
+        shown = []
+        for one in re.findall(r"<note[ >].*?</note>", body, re.S):
+            step = re.search(r"<step>(\w)</step>", one)
+            if step is None:
+                continue
+            octave = re.search(r"<octave>(\d)</octave>", one).group(1)
+            accidental = re.search(r"<accidental[^>]*>([\w-]+)</accidental>", one)
+            shown.append((step.group(1) + octave, accidental.group(1) if accidental else ""))
+        result[int(number)] = shown
+    return result
+
+
+def test_accidentals_only_where_needed(tmp_path):
+    def quarter(pitch_number, beat):
+        return q(pitch_number, beat)
+
+    # 올림다단조(조표 ♯4: F C G D)
+    notes = (
+        quarter(68, 0), quarter(73, 1), quarter(75, 2), quarter(66, 3),  # 1마디: 조표 안의 음
+        quarter(75, 4), quarter(74, 5), quarter(75, 6), quarter(73, 7),  # 2마디: D♯ D♮ D♯
+        quarter(74, 8), quarter(73, 9), quarter(71, 10), quarter(73, 11),  # 3마디: D♮, B
+        quarter(75, 12), quarter(63, 13), quarter(73, 14), quarter(73, 15),  # 4마디: D♯5, D♯4
+        quarter(74, 16), quarter(62, 17), quarter(73, 18), quarter(73, 19),  # 5마디: D♮5, D♮4
+    )
+    xml = save_musicxml(build_score(notes, 90, ScoreInfo(key_name="c#")), tmp_path / "a.musicxml").read_text(
+        encoding="utf-8"
+    )
+    shown = printed_accidentals(xml)
+
+    assert [a for _, a in shown[1]] == ["", "", "", ""]  # 조표에 있는 음에는 표시 없음
+    assert [a for _, a in shown[2][:3]] == ["", "natural", "sharp"]  # 같은 마디에서 바뀌면 표시
+    assert shown[3][0] == ("D5", "natural") and shown[3][2] == ("B4", "")  # B에 쓸데없는 ♮ 없음
+    assert [a for _, a in shown[4][:2]] == ["", ""]  # 앞 마디를 알려 주는 친절 임시표 없음
+    assert [a for _, a in shown[5][:2]] == ["natural", "natural"]  # 조표와 다르면 옥타브마다 표시
+
+
 def test_no_double_barline_without_changes(tmp_path):
     xml = save_musicxml(build_score(repeat_scale(G_MAJOR_SCALE, 8), 90), tmp_path / "s.musicxml").read_text(
         encoding="utf-8"
