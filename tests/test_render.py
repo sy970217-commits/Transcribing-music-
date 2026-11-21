@@ -204,6 +204,22 @@ def test_dal_segno_without_segno_sign_raises_clear_error(tmp_path):
         score_to_midi(score_path, tmp_path)
 
 
+def test_dynamics_are_written_and_velocities_kept(tmp_path):
+    soft_then_loud = tuple(
+        QuantizedNote(pitch=60 + beat % 5, velocity=50 if beat < 16 else 95,
+                      start_beats=Fraction(beat), duration_beats=Fraction(1))
+        for beat in range(32)
+    )
+    score_path = save_musicxml(build_score(soft_then_loud, tempo_bpm=120), tmp_path / "dyn.musicxml")
+
+    xml = score_path.read_text(encoding="utf-8")
+    midi = pretty_midi.PrettyMIDI(str(score_to_midi(score_path, tmp_path)))
+    velocities = [n.velocity for inst in midi.instruments for n in sorted(inst.notes, key=lambda n: n.start)]
+
+    assert "<p />" in xml and "<f />" in xml
+    assert velocities[:16] == [50] * 16 and velocities[16:] == [95] * 16
+
+
 def test_missing_score_raises_clear_error(tmp_path):
     with pytest.raises(ScoreLoadError, match="찾을 수 없습니다"):
         score_to_midi(tmp_path / "없음.musicxml", tmp_path)

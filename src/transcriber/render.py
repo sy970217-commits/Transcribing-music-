@@ -95,6 +95,11 @@ def score_to_midi(score_path: str | Path, output_dir: str | Path = DEFAULT_OUTPU
     score = load_score(source)
     midi_path = Path(output_dir) / f"{source.stem}.mid"
     midi_path.parent.mkdir(parents=True, exist_ok=True)
+    for element in score.recurse().notes:
+        # 음마다 세기가 적혀 있으면 그 세기를 그대로 쓴다(셈여림 글자가 덮어쓰지 않게).
+        # 세기가 없는 음(예: Finale에서 내보낸 악보)은 셈여림 글자(p, f …)에 따라 연주된다.
+        if element.volume.velocity is not None:
+            element.volume.velocityIsRelative = False
     try:
         score.write("midi", fp=str(midi_path))
     except repeat.ExpanderException as error:

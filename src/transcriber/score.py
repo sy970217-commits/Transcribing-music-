@@ -9,6 +9,7 @@ from pathlib import Path
 from music21 import (
     chord,
     clef,
+    dynamics,
     expressions,
     instrument,
     key,
@@ -28,6 +29,7 @@ from transcriber.meters import (
     normalize_changes,
     parse_time_signature,
 )
+from transcriber.dynamics_marks import DynamicMark, plan_dynamics
 from transcriber.pedals import PedalSpan, attach_pedals
 from transcriber.spelling import respell_part
 from transcriber.tempo_marks import TempoChange, TempoMark, plan_tempo_marks
@@ -92,16 +94,21 @@ def build_score(
         piano_part.insert(0, instrument.Piano())
     # 페달 표시는 피아노 아래 단(왼손) 밑에 적는다. 왼손 음이 없으면 오른손에.
     attach_pedals(parts[1] if left_hand else parts[0], pedals)
+    first_bar = bar_length(signatures[0].text)
+    # 피아노 셈여림은 오른손 단에 한 번만 적는다(두 단에 같이 적용되는 관례)
+    if notes:
+        _attach_dynamics(parts[0] if right_hand else parts[1], plan_dynamics(notes, first_bar))
     if melody:
         melody_part = _build_part(melody, clef.TrebleClef(), signatures, total_beats)
         # 노래 멜로디는 합창 "아~" 소리(General MIDI 52번)로 연주한다
         melody_part.insert(0, instrument.Choir())
         melody_part.partName = "멜로디"
         attach_lyrics(melody_part, info.lyrics)
+        _attach_dynamics(melody_part, plan_dynamics(melody, first_bar))
         parts.insert(0, melody_part)
     parts[0].insert(0, tempo.MetronomeMark(number=round(tempo_bpm)))
     # 조성·빠르기 판단은 첫 박자표의 마디 길이를 기준으로 한다(대부분의 곡은 박자표가 하나)
-    bar_beats = bar_length(signatures[0].text)
+    bar_beats = first_bar
     for mark in plan_tempo_marks(tempo_changes, total_beats, bar_beats):
         parts[0].insert(mark.beat, _tempo_element(mark))
 
@@ -116,6 +123,19 @@ def build_score(
         respell_part(part)  # 가장조의 D♯처럼, 음 이름을 조에 맞게
     score.metadata = _build_metadata(info)
     return score
+
+
+def _attach_dynamics(part: stream.Part, marks: tuple[DynamicMark, ...]) -> None:
+    """셈여림 글자(pp~ff)와 크레셴도·디크레셴도를 파트에 넣는다. 소리 세기는 음마다 그대로 둔다."""
+    notes = list(part.flatten().notes)
+    for mark in marks:
+        if mark.kind == "level":
+            part.insert(mark.beat, dynamics.Dynamic(mark.text))
+            continue
+        covered = [n for n in notes if mark.beat <= n.offset < mark.end_beat]
+        if covered:
+            hairpin = dynamics.Crescendo if mark.kind == "crescendo" else dynamics.Diminuendo
+            part.insert(0, hairpin(covered))
 
 
 def _tempo_element(mark: TempoMark):
