@@ -34,6 +34,7 @@ from transcriber.meters import (
 )
 from transcriber.dynamics_marks import DynamicMark, plan_dynamics
 from transcriber.engraving import place_marks
+from transcriber.harmony_marks import attach_chord_symbols
 from transcriber.page_layout import apply_page_layout
 from transcriber.pedals import PedalSpan, attach_pedals
 from transcriber.spelling import respell_part
@@ -144,6 +145,8 @@ def build_score(
             part.insert(start, key.Key(song_key.tonic, song_key.mode))
     for part in score.parts:
         respell_part(part)  # 가장조의 D♯처럼, 음 이름을 조에 맞게
+    # 코드 기호는 맨 위 단 위에(반주 음으로 찾고, 반주가 없으면 멜로디로). 음 이름 정리가 끝난 뒤에 넣는다
+    attach_chord_symbols(score.parts.first(), notes or melody, total_beats, first_bar)
     score.metadata = _build_metadata(info)
     return score
 

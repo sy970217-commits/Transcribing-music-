@@ -2,7 +2,7 @@ import re
 from fractions import Fraction
 
 import pytest
-from music21 import chord, converter, note, tempo
+from music21 import chord, converter, harmony, note, tempo
 
 from transcriber.rhythm import QuantizedNote
 from transcriber.score import ScoreInfo, build_score, key_name_of, save_musicxml
@@ -19,9 +19,14 @@ def q(pitch, start, length=1):
     )
 
 
+def played(part):
+    """실제로 소리 나는 음표·화음(악보 위 코드 기호는 빼고)"""
+    return [e for e in part.recurse().notes if not isinstance(e, harmony.ChordSymbol)]
+
+
 def pitches_in(part):
     found = []
-    for element in part.recurse().notes:
+    for element in played(part):
         if isinstance(element, chord.Chord) and len(element.pitches) > 1:
             found.append(tuple(sorted(p.midi for p in element.pitches)))
         elif isinstance(element, chord.Chord):
@@ -282,7 +287,7 @@ def test_overlapping_notes_do_not_create_tie_fragments():
 
 def test_notes_starting_together_share_shortest_gap():
     notes = (q(C4, 0, length=2), q(E4, 0, length=1), q(G4, 1))
-    first = list(build_score(notes, tempo_bpm=120).parts[0].recurse().notes)[0]
+    first = played(build_score(notes, tempo_bpm=120).parts[0])[0]
 
     assert first.quarterLength == 1
 

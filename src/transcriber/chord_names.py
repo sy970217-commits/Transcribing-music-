@@ -20,6 +20,7 @@
 
 import argparse
 import sys
+from dataclasses import dataclass
 from typing import Iterable
 
 NOTE_NAMES = ("C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B")
@@ -39,8 +40,23 @@ CHORD_TYPES: dict[frozenset[int], str] = {
 }
 
 
-def chord_name(pitches: Iterable[int]) -> str | None:
-    """음 번호들(MIDI 번호 또는 0~11, 낮은 음이 맨 아래) → 코드 이름. 맞는 코드가 없으면 None."""
+@dataclass(frozen=True)
+class Chord:
+    """알아낸 코드. root·bass는 음이름 번호(0~11), kind는 'M'·'m'·'7' 같은 종류."""
+
+    root: int
+    kind: str
+    bass: int
+
+    @property
+    def name(self) -> str:
+        """예: CM, Am7, CM/E(자리바꿈이면 /베이스)"""
+        base = NOTE_NAMES[self.root] + self.kind
+        return base if self.root == self.bass else f"{base}/{NOTE_NAMES[self.bass]}"
+
+
+def identify(pitches: Iterable[int]) -> Chord | None:
+    """음 번호들(MIDI 번호 또는 0~11, 낮은 음이 맨 아래) → 코드. 맞는 코드가 없으면 None."""
     notes = list(pitches)
     if not notes:
         return None
@@ -51,9 +67,14 @@ def chord_name(pitches: Iterable[int]) -> str | None:
     for root in [bass] + sorted(classes - {bass}):
         kind = CHORD_TYPES.get(frozenset((p - root) % PITCH_CLASSES for p in classes))
         if kind is not None:
-            name = NOTE_NAMES[root] + kind
-            return name if root == bass else f"{name}/{NOTE_NAMES[bass]}"
+            return Chord(root=root, kind=kind, bass=bass)
     return None
+
+
+def chord_name(pitches: Iterable[int]) -> str | None:
+    """음 번호들 → 코드 이름. 맞는 코드가 없으면 None."""
+    chord = identify(pitches)
+    return chord.name if chord else None
 
 
 def pitches_from_intervals(intervals: Iterable[int], bass: int = 0) -> tuple[int, ...]:
