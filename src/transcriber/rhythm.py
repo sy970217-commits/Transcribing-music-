@@ -10,6 +10,7 @@ import numpy as np
 
 from transcriber.audio_io import load_audio
 from transcriber.pitch import Note
+from transcriber.rolls import mark_rolled_chords
 
 DEFAULT_TEMPO_BPM = 120.0
 MIN_TEMPO_BPM = 40.0
@@ -30,6 +31,7 @@ class QuantizedNote:
     velocity: int
     start_beats: Fraction
     duration_beats: Fraction
+    rolled: bool = False  # 아르페지오(펼친 화음)로 친 음
 
 
 def estimate_tempo(audio_path: str | Path) -> float:
@@ -74,12 +76,17 @@ class BeatNote:
     velocity: int
     start_beats: float
     end_beats: float
+    rolled: bool = False
 
 
 def quantize_beat_notes(
     notes: tuple[BeatNote, ...], subdivision: int = DEFAULT_SUBDIVISION
 ) -> tuple[QuantizedNote, ...]:
-    """음을 박자 칸에 맞춘다. 박마다 16분음표 칸과 셋잇단음표 칸 중 더 잘 맞는 쪽을 고른다."""
+    """음을 박자 칸에 맞춘다. 박마다 16분음표 칸과 셋잇단음표 칸 중 더 잘 맞는 쪽을 고른다.
+
+    아르페지오로 친 화음은 먼저 찾아서 첫 음 시작에 맞춘다.
+    """
+    notes = mark_rolled_chords(notes)
     divisions = _choose_divisions(tuple(n.start_beats for n in notes), subdivision)
 
     def division_at(beat: float) -> int:
@@ -96,6 +103,7 @@ def quantize_beat_notes(
                 velocity=n.velocity,
                 start_beats=start,
                 duration_beats=max(end - start, shortest),
+                rolled=n.rolled,
             )
         )
     return tuple(sorted(quantized, key=lambda q: (q.start_beats, q.pitch)))

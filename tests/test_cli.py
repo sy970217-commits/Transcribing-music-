@@ -196,6 +196,23 @@ def test_midi_pedal_becomes_ped_marks(tmp_path):
     assert '<pedal number="1" sign="yes" type="stop"' in xml
 
 
+def test_rolled_chord_in_midi_gets_arpeggio_sign(tmp_path):
+    import pretty_midi
+
+    midi = pretty_midi.PrettyMIDI(initial_tempo=120)  # 1박 = 0.5초
+    piano = pretty_midi.Instrument(program=0)
+    for i, pitch in enumerate((64, 67, 72, 76)):  # 아래에서 위로 0.1박씩 늦게
+        piano.notes.append(pretty_midi.Note(velocity=80, pitch=pitch, start=i * 0.05, end=2.0))
+    midi.instruments.append(piano)
+    midi.write(str(tmp_path / "roll.mid"))
+
+    result = transcribe_file(tmp_path / "roll.mid", tmp_path / "out")
+
+    xml = result.musicxml_path.read_text(encoding="utf-8")
+    assert xml.count("<arpeggiate") == 4  # 화음의 네 음 모두에 표시
+    assert xml.count("<chord />") == 3  # 네 음이 한 화음으로 묶임
+
+
 def test_main_reports_missing_file(tmp_path, capsys):
     exit_code = main([str(tmp_path / "nope.mp3")])
 

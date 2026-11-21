@@ -420,4 +420,6 @@ def _to_music21_element(group: tuple[QuantizedNote, ...], duration) -> note.NotR
         else chord.Chord(pitches, quarterLength=duration)
     )
     element.volume.velocity = max(n.velocity for n in group)
+    if len(pitches) > 1 and any(n.rolled for n in group):
+        element.expressions.append(expressions.ArpeggioMark())  # 펼친 화음 ≀
     return element
