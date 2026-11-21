@@ -115,3 +115,15 @@ def test_stem_stops_above_the_other_voice_note(tmp_path):
     shortened = re.findall(r'<stem default-y="(-?[\d.]+)">down</stem>', piano_part)
     # 미♭3(맨 윗줄에서 -25)에서 시작한 기둥이 미♭2(-50)보다 1칸 위(-40)에서 멈춤
     assert shortened and all(float(y) == -40 for y in shortened)
+
+
+def test_eighth_rest_head_sits_in_the_fourth_space(tmp_path):
+    # 위 단: 8분쉼표 뒤 8분음표 / 아래 단: 같은 리듬
+    piano = (q(72, Fraction(1, 2), Fraction(1, 2)), q(48, Fraction(1, 2), Fraction(1, 2)))
+    piano_part = part_xml(build(tmp_path, piano), 0)
+
+    eighth_rests = [r for r in re.findall(r"<note>\s*<rest.*?</note>", piano_part, re.S) if "<type>eighth" in r]
+    upper = [r for r in eighth_rests if "<staff>1</staff>" in r]
+    lower = [r for r in eighth_rests if "<staff>2</staff>" in r]
+    assert upper and all("<display-step>D</display-step>" in r and "<display-octave>5" in r for r in upper)
+    assert lower and all("<display-step>F</display-step>" in r and "<display-octave>3" in r for r in lower)
