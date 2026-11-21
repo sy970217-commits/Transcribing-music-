@@ -6,6 +6,12 @@
 - 0 3 4 = Cm   (도·미♭·솔)
 - 0 3 3 = Cdim (도·미♭·솔♭)
 - 0 4 4 = Caug (도·미·솔#)
+7화음(네 음):
+- 0 4 3 3 = C7     (도·미·솔·시♭)
+- 0 4 3 4 = CM7    (도·미·솔·시)
+- 0 3 4 3 = Cm7    (도·미♭·솔·시♭)
+- 0 3 3 4 = Cm7b5  (도·미♭·솔♭·시♭)
+- 0 3 3 3 = Cdim7  (도·미♭·솔♭·시𝄫)
 맨 아래 음이 근음(코드 이름의 음)이 아니면 자리바꿈 코드로 보고 '/맨 아래 음'을 붙인다.
 예: 미·솔·도 → CM/E,  도·미♭·라♭(0 3 5) → G#M/C
 
@@ -25,6 +31,11 @@ CHORD_TYPES: dict[frozenset[int], str] = {
     frozenset({0, 3, 7}): "m",
     frozenset({0, 3, 6}): "dim",
     frozenset({0, 4, 8}): "aug",
+    frozenset({0, 4, 7, 10}): "7",
+    frozenset({0, 4, 7, 11}): "M7",
+    frozenset({0, 3, 7, 10}): "m7",
+    frozenset({0, 3, 6, 10}): "m7b5",
+    frozenset({0, 3, 6, 9}): "dim7",
 }
 
 
@@ -35,7 +46,8 @@ def chord_name(pitches: Iterable[int]) -> str | None:
         return None
     bass = min(notes) % PITCH_CLASSES
     classes = {p % PITCH_CLASSES for p in notes}
-    # 맨 아래 음을 근음으로 보는 경우를 먼저 본다(증3화음처럼 어느 음을 근음으로 봐도 맞는 코드 때문)
+    # 맨 아래 음을 근음으로 보는 경우를 먼저 본다
+    # (증3화음·감7화음처럼 어느 음을 근음으로 봐도 맞는 코드, Cm7=E♭6처럼 두 이름이 가능한 코드 때문)
     for root in [bass] + sorted(classes - {bass}):
         kind = CHORD_TYPES.get(frozenset((p - root) % PITCH_CLASSES for p in classes))
         if kind is not None:

@@ -36,7 +36,7 @@ def test_octaves_and_doubled_notes_are_ignored():
 
 def test_unknown_sets_return_none():
     assert chord_name((60, 62)) is None
-    assert chord_name((60, 64, 67, 71)) is None  # 4음 화음은 아직 이름 없음
+    assert chord_name((60, 62, 64, 67)) is None  # 도·레·미·솔은 정해 둔 코드가 아님
     assert chord_name(()) is None
 
 
@@ -47,3 +47,18 @@ def test_cli_prints_the_name(capsys):
     assert capsys.readouterr().out.strip() == "Am"
     with pytest.raises(SystemExit):
         main([])
+
+
+def test_seventh_chords_on_c():
+    assert name(0, 4, 3, 3) == "C7"
+    assert name(0, 4, 3, 4) == "CM7"
+    assert name(0, 3, 4, 3) == "Cm7"
+    assert name(0, 3, 3, 4) == "Cm7b5"
+    assert name(0, 3, 3, 3) == "Cdim7"
+
+
+def test_seventh_chord_inversions_and_symmetric_dim7():
+    assert name(0, 3, 3, 2, bass=4) == "C7/E"  # 미·솔·시♭·도
+    assert name(0, 1, 4, 3, bass=11) == "CM7/B"  # 시·도·미·솔
+    assert name(0, 3, 3, 3, bass=9) == "Adim7"  # 감7화음은 맨 아래 음을 근음으로
+    assert name(0, 4, 3, 2, bass=3) == "Cm7/D#"  # 미♭·솔·시♭·도 (E♭6와 같은 음)
