@@ -14,6 +14,7 @@ from music21 import (
     expressions,
     instrument,
     key,
+    layout,
     metadata,
     meter,
     note,
@@ -90,9 +91,10 @@ def build_score(
     right_hand = tuple(n for n in notes if n.pitch >= MIDDLE_C)
     left_hand = tuple(n for n in notes if n.pitch < MIDDLE_C)
 
+    # 피아노는 한 악기의 두 단(높은음자리표·낮은음자리표, 중괄호로 묶음)으로 만든다
     parts = [
-        _build_part(right_hand, clef.TrebleClef(), signatures, total_beats, allow_voices),
-        _build_part(left_hand, clef.BassClef(), signatures, total_beats, allow_voices),
+        _build_part(right_hand, clef.TrebleClef(), signatures, total_beats, allow_voices, staff=True),
+        _build_part(left_hand, clef.BassClef(), signatures, total_beats, allow_voices, staff=True),
     ]
     for piano_part in parts:
         piano_part.insert(0, instrument.Piano())
@@ -123,6 +125,13 @@ def build_score(
     score = stream.Score()
     for part in parts:
         score.insert(0, part)
+    treble_staff, bass_staff = parts[-2], parts[-1]
+    score.insert(
+        0,
+        layout.StaffGroup(
+            [treble_staff, bass_staff], name="Piano", abbreviation="Pno.", symbol="brace", barTogether=True
+        ),
+    )
 
     for start, song_key in _resolve_keys(notes + melody, bar_beats, info.key_name, melody):
         for part in score.parts:
@@ -393,8 +402,10 @@ def _build_part(
     signatures: tuple[TimeSignatureChange, ...],
     total_beats,
     allow_voices: bool = False,
+    staff: bool = False,
 ) -> stream.Part:
-    part = stream.Part()
+    # staff=True: 피아노처럼 여러 단으로 된 악기의 한 단(PartStaff)
+    part = stream.PartStaff() if staff else stream.Part()
     part.insert(0, part_clef)
     for change in signatures:
         part.insert(change.beat, parse_time_signature(change.text))

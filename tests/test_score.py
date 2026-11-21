@@ -82,7 +82,7 @@ def test_three_four_time_signature_is_written(tmp_path):
 
     xml = save_musicxml(score, tmp_path / "waltz.musicxml").read_text(encoding="utf-8")
     assert "<beats>3</beats>" in xml and "<beat-type>4</beat-type>" in xml
-    assert xml.count("<measure ") == 4 * 2  # 12박 ÷ 3박 = 4마디, 피아노 2단
+    assert xml.count("<measure ") == 4  # 12박 ÷ 3박 = 4마디 (피아노 두 단은 한 악기)
 
 
 def test_time_signature_change_in_the_middle(tmp_path):
@@ -95,7 +95,7 @@ def test_time_signature_change_in_the_middle(tmp_path):
         encoding="utf-8"
     )
 
-    assert xml.count("<measure ") == 4 * 2  # 4마디, 피아노 2단
+    assert xml.count("<measure ") == 4  # 4마디 (피아노 두 단은 한 악기)
     assert "<beats>4</beats>" in xml and "<beats>3</beats>" in xml
 
 
@@ -140,12 +140,25 @@ def test_double_barline_before_key_change(tmp_path):
 
     xml = save_musicxml(build_score(notes, tempo_bpm=90), tmp_path / "s.musicxml").read_text(encoding="utf-8")
 
-    # 피아노 2단 × (16마디 끝 겹세로줄 1개) + 곡 끝 세로줄은 light-heavy
-    assert xml.count("<bar-style>light-light</bar-style>") == 2
+    # 16마디 끝 겹세로줄 1개 (피아노 두 단은 한 악기라 세로줄도 하나)
+    assert xml.count("<bar-style>light-light</bar-style>") == 1
     import re
 
     measure_16 = re.search(r'<measure[^>]*number="16".*?</measure>', xml, re.S).group(0)
     assert "light-light" in measure_16
+
+
+def test_piano_is_one_instrument_with_two_staves(tmp_path):
+    notes = (q(C4, 0), q(59, 0), q(C3, 1))  # 가운데 도(C4)는 높은음자리표, 시(B3)는 낮은음자리표
+
+    xml = save_musicxml(build_score(notes, tempo_bpm=90), tmp_path / "s.musicxml").read_text(encoding="utf-8")
+
+    assert xml.count("<score-part ") == 1
+    assert "<staves>2</staves>" in xml  # 두 단으로 된 악기는 MusicXML 기본값으로 중괄호로 묶인다
+    c4 = xml.split("<step>C</step>")[1].split("</note>")[0]
+    assert "<octave>4</octave>" in c4 and "<staff>1</staff>" in c4
+    b3 = xml.split("<step>B</step>")[1].split("</note>")[0]
+    assert "<octave>3</octave>" in b3 and "<staff>2</staff>" in b3
 
 
 def test_no_double_barline_without_changes(tmp_path):

@@ -255,9 +255,12 @@ def test_held_note_becomes_second_voice_and_keeps_its_length(tmp_path):
 
 def test_without_voices_held_note_is_trimmed(tmp_path):
     left = (q(48, 0, length=4), q(52, 0), q(55, 1))
+    import re
+
     xml = save_musicxml(build_score(left, tempo_bpm=TEMPO), tmp_path / "v.musicxml").read_text(encoding="utf-8")
 
-    assert "<backup>" not in xml
+    voices_per_staff = set(re.findall(r"<voice>(\d+)</voice>.*?<staff>(\d)</staff>", xml, re.S))
+    assert voices_per_staff <= {("1", "1"), ("2", "2")}  # 단마다 성부 하나뿐
 
 
 def test_missing_score_raises_clear_error(tmp_path):
