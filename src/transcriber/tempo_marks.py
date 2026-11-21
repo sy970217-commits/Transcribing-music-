@@ -11,6 +11,8 @@ from fractions import Fraction
 
 MIN_SHOWN_TEMPO_DIFF = 3.0  # 지금 적힌 빠르기와 이만큼(BPM) 이상 다르면 새로 적는다
 MIN_RAMP_CHANGE = 0.10  # 점점 빨라지거나 느려지는 폭이 10% 이상이면 rit./accel.로 적는다
+# 적힌 빠르기의 절반보다 갑자기 느려지면 늘임표(𝄐)로 본다 (Finale는 늘임표를 이렇게 연주한다)
+FERMATA_TEMPO_RATIO = 0.5
 
 
 @dataclass(frozen=True)
@@ -25,13 +27,15 @@ class TempoChange:
 class TempoMark:
     """악보에 넣을 표시 하나.
 
-    kind: "shown"(♩=76처럼 보이게), "hidden"(연주에만 쓰임), "text"(rit./accel.)
+    kind: "shown"(♩=76처럼 보이게), "hidden"(연주에만 쓰임), "text"(rit./accel.),
+          "fermata"(beat~end_beat 사이에 시작하는 음에 늘임표)
     """
 
     beat: Fraction
     kind: str
     bpm: float | None = None
     text: str | None = None
+    end_beat: Fraction | None = None
 
 
 def plan_tempo_marks(
@@ -63,7 +67,23 @@ def plan_tempo_marks(
                 else:
                     marks.append(TempoMark(beat=change.beat, kind="hidden", bpm=change.bpm))
         index = end + 1
-    return tuple(marks)
+    return tuple(marks) + _fermata_marks(ordered, marks, total_beats)
+
+
+def _fermata_marks(
+    ordered: list[TempoChange], marks: list[TempoMark], total_beats: Fraction
+) -> tuple[TempoMark, ...]:
+    """적힌 빠르기보다 절반 이하로 확 느려진 구간을 늘임표 구간으로 고른다."""
+    shown = [(ordered[0].beat, ordered[0].bpm)] + [(m.beat, m.bpm) for m in marks if m.kind == "shown"]
+    fermatas = []
+    for position, change in enumerate(ordered[1:], start=1):
+        # 기준: 이 위치에서 악보에 적혀 있는 빠르기(가장 최근의 ♩= 표시)
+        reference = next(bpm for beat, bpm in reversed(shown) if beat <= change.beat)
+        if change.bpm >= reference * FERMATA_TEMPO_RATIO:
+            continue
+        end = ordered[position + 1].beat if position + 1 < len(ordered) else total_beats
+        fermatas.append(TempoMark(beat=change.beat, kind="fermata", end_beat=end))
+    return tuple(fermatas)
 
 
 def _run_end(ordered: list[TempoChange], start: int, bar_beats: Fraction) -> int:

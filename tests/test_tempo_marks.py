@@ -54,5 +54,31 @@ def test_rit_then_new_tempo_like_gaeulkkot():
     assert shown_or_text == [("text", "rit."), ("shown", 76), ("shown", 90)]
 
 
+def test_sudden_big_slowdown_becomes_fermata():
+    # 가을꽃 끝: ♩=90에서 rit. 뒤 ♩=15.5로 확 느려짐 → 늘임표
+    ramp = tuple(c(Fraction(293) + Fraction(i, 2), 85 - 5 * i) for i in range(5))
+    changes = (c(0, 90), *ramp, c(298, 15.5))
+
+    fermatas = [m for m in plan_tempo_marks(changes, Fraction(304), BAR) if m.kind == "fermata"]
+
+    assert [(m.beat, m.end_beat) for m in fermatas] == [(298, 304)]
+
+
+def test_fermata_in_the_middle_ends_when_tempo_returns():
+    changes = (c(0, 90), c(15, 30), c(16, 90))
+
+    fermatas = [m for m in plan_tempo_marks(changes, Fraction(64), BAR) if m.kind == "fermata"]
+
+    assert [(m.beat, m.end_beat) for m in fermatas] == [(15, 16)]
+
+
+def test_ordinary_rit_is_not_fermata():
+    ramp = tuple(c(Fraction(16) + Fraction(i, 2), 85 - 5 * i) for i in range(6))
+
+    marks = plan_tempo_marks((c(0, 90), *ramp), Fraction(64), BAR)
+
+    assert not any(m.kind == "fermata" for m in marks)
+
+
 def test_single_tempo_needs_no_marks():
     assert plan_tempo_marks((c(0, 90),), total_beats=Fraction(64), bar_beats=BAR) == ()

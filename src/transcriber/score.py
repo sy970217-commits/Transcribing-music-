@@ -111,6 +111,10 @@ def build_score(
     # 조성·빠르기 판단은 첫 박자표의 마디 길이를 기준으로 한다(대부분의 곡은 박자표가 하나)
     bar_beats = first_bar
     for mark in plan_tempo_marks(tempo_changes, total_beats, bar_beats):
+        if mark.kind == "fermata":
+            for part in parts:
+                _attach_fermatas(part, mark.beat, mark.end_beat)
+            continue
         parts[0].insert(mark.beat, _tempo_element(mark))
 
     score = stream.Score()
@@ -137,6 +141,13 @@ def _attach_dynamics(part: stream.Part, marks: tuple[DynamicMark, ...]) -> None:
         if covered:
             hairpin = dynamics.Crescendo if mark.kind == "crescendo" else dynamics.Diminuendo
             part.insert(0, hairpin(covered))
+
+
+def _attach_fermatas(part: stream.Part, start: Fraction, end: Fraction) -> None:
+    """start~end 사이에 시작하는 음마다 늘임표(𝄐)를 붙인다."""
+    for element in part.flatten().notes:
+        if start <= element.offset < end:
+            element.expressions.append(expressions.Fermata())
 
 
 def _tempo_element(mark: TempoMark):

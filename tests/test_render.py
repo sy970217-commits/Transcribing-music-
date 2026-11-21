@@ -220,6 +220,22 @@ def test_dynamics_are_written_and_velocities_kept(tmp_path):
     assert velocities[:16] == [50] * 16 and velocities[16:] == [95] * 16
 
 
+def test_big_slowdown_shows_fermata_and_still_plays_long(tmp_path):
+    from transcriber.tempo_marks import TempoChange
+
+    piano = tuple(q(60 + beat, beat) for beat in range(8))
+    changes = (TempoChange(Fraction(0), 120), TempoChange(Fraction(6), 30))
+    score_path = save_musicxml(
+        build_score(piano, tempo_bpm=120, tempo_changes=changes), tmp_path / "fermata.musicxml"
+    )
+
+    xml = score_path.read_text(encoding="utf-8")
+    midi = pretty_midi.PrettyMIDI(str(score_to_midi(score_path, tmp_path)))
+
+    assert xml.count("<fermata") == 2  # 7·8번째 음
+    assert midi.get_tempo_changes()[1][-1] == pytest.approx(30, abs=0.5)
+
+
 def test_missing_score_raises_clear_error(tmp_path):
     with pytest.raises(ScoreLoadError, match="찾을 수 없습니다"):
         score_to_midi(tmp_path / "없음.musicxml", tmp_path)
