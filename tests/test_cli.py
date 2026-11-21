@@ -161,6 +161,21 @@ def test_main_rejects_lyrics_without_melody(melody_wav, tmp_path, capsys):
     assert "멜로디 단이 필요" in capsys.readouterr().err
 
 
+def test_main_uses_given_time_signature(melody_wav, tmp_path):
+    exit_code = main([str(melody_wav), "--output-dir", str(tmp_path), "--tempo", "120", "--time-signature", "3/4"])
+
+    xml = (tmp_path / "melody.musicxml").read_text(encoding="utf-8")
+    assert exit_code == EXIT_OK
+    assert "<beats>3</beats>" in xml
+
+
+def test_main_rejects_unknown_time_signature(melody_wav, tmp_path, capsys):
+    exit_code = main([str(melody_wav), "--output-dir", str(tmp_path), "--tempo", "120", "--time-signature", "세박자"])
+
+    assert exit_code == EXIT_ERROR
+    assert "알 수 없는 박자표" in capsys.readouterr().err
+
+
 def test_main_reports_missing_file(tmp_path, capsys):
     exit_code = main([str(tmp_path / "nope.mp3")])
 

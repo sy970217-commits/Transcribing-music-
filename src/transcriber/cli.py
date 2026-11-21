@@ -75,7 +75,12 @@ def _transcribe_midi(
     # --tempo로 빠르기를 직접 정하면 곡 전체를 그 빠르기 하나로 쓴다
     tempo_changes = song.tempo_changes if tempo_bpm is None else ()
     score = build_score(
-        song.accompaniment, tempo, info, melody=song.melody, tempo_changes=tempo_changes
+        song.accompaniment,
+        tempo,
+        info,
+        time_signatures=song.time_signatures,
+        melody=song.melody,
+        tempo_changes=tempo_changes,
     )
     musicxml_path = save_musicxml(score, target_dir / f"{source.stem}.musicxml")
     return TranscriptionResult(
@@ -149,6 +154,11 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         help="조성 직접 지정 (예: G, D, e). 지정하지 않으면 자동으로 찾음",
     )
     parser.add_argument(
+        "--time-signature",
+        default=None,
+        help="박자표 직접 지정 (예: 3/4, 6/8). 음원은 기본 4/4, MIDI는 파일에 적힌 박자표를 씀",
+    )
+    parser.add_argument(
         "--vocals",
         action="store_true",
         help="사람이 부른 노래 녹음일 때: 목소리를 분리해 맨 위에 멜로디 단을 만듦 (몇 분 걸림)",
@@ -171,6 +181,7 @@ def main(argv: list[str] | None = None) -> int:
             lyricist=args.lyricist,
             key_name=args.key,
             lyrics=read_lyrics_file(args.lyrics) if args.lyrics else (),
+            time_signature=args.time_signature,
         )
         result = transcribe_file(args.audio, args.output_dir, args.tempo, info, args.vocals)
     except (AudioLoadError, MidiLoadError, LyricsError, PitchDetectionError, ValueError) as error:

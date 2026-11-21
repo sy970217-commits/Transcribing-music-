@@ -74,6 +74,57 @@ def test_melody_only_score_is_allowed():
     assert len(score.parts) == 3
 
 
+def test_three_four_time_signature_is_written(tmp_path):
+    from transcriber.meters import TimeSignatureChange
+
+    waltz = tuple(q(C4 + i % 3, i) for i in range(12))
+    score = build_score(waltz, tempo_bpm=90, time_signatures=(TimeSignatureChange(Fraction(0), "3/4"),))
+
+    xml = save_musicxml(score, tmp_path / "waltz.musicxml").read_text(encoding="utf-8")
+    assert "<beats>3</beats>" in xml and "<beat-type>4</beat-type>" in xml
+    assert xml.count("<measure ") == 4 * 2  # 12박 ÷ 3박 = 4마디, 피아노 2단
+
+
+def test_time_signature_change_in_the_middle(tmp_path):
+    from transcriber.meters import TimeSignatureChange
+
+    notes = tuple(q(C4, i) for i in range(14))  # 4/4 2마디(8박) + 3/4 2마디(6박)
+    changes = (TimeSignatureChange(Fraction(0), "4/4"), TimeSignatureChange(Fraction(8), "3/4"))
+
+    xml = save_musicxml(build_score(notes, 90, time_signatures=changes), tmp_path / "s.musicxml").read_text(
+        encoding="utf-8"
+    )
+
+    assert xml.count("<measure ") == 4 * 2  # 4마디, 피아노 2단
+    assert "<beats>4</beats>" in xml and "<beats>3</beats>" in xml
+
+
+def test_time_signature_from_info_overrides(tmp_path):
+    from transcriber.meters import TimeSignatureChange
+
+    score = build_score(
+        tuple(q(C4, i) for i in range(6)),
+        tempo_bpm=90,
+        info=ScoreInfo(time_signature="6/8"),
+        time_signatures=(TimeSignatureChange(Fraction(0), "4/4"),),
+    )
+
+    xml = save_musicxml(score, tmp_path / "s.musicxml").read_text(encoding="utf-8")
+    assert "<beats>6</beats>" in xml and "<beat-type>8</beat-type>" in xml
+
+
+def test_key_change_measure_number_counts_three_four():
+    from transcriber.meters import TimeSignatureChange
+
+    # 3/4에서 조가 바뀌는 곳: 16마디 × 3박 = 48박 뒤 → 17마디
+    three = (TimeSignatureChange(Fraction(0), "3/4"),)
+    notes = tuple(q(G_MAJOR_SCALE[i % 8], i) for i in range(48)) + tuple(
+        q(A_MAJOR_SCALE[i % 8], 48 + i) for i in range(48)
+    )
+
+    assert "17마디부터" in key_name_of(build_score(notes, tempo_bpm=90, time_signatures=three))
+
+
 def test_overlapping_notes_do_not_create_tie_fragments():
     # 길게 누른 도 위에 미, 솔이 차례로 들어오는 경우
     notes = (q(C4, 0, length=3), q(E4, 1), q(G4, 2))

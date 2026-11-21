@@ -17,6 +17,7 @@ from transcriber.rhythm import (
     QuantizedNote,
     quantize_beat_notes,
 )
+from transcriber.meters import TimeSignatureChange, normalize_changes
 from transcriber.tempo_marks import TempoChange
 
 MIDI_EXTENSIONS = frozenset({".mid", ".midi"})
@@ -36,6 +37,7 @@ class MidiSong:
     melody: tuple[QuantizedNote, ...]
     accompaniment: tuple[QuantizedNote, ...]
     tempo_changes: tuple[TempoChange, ...] = ()  # 첫 빠르기 포함, 박 단위 위치
+    time_signatures: tuple[TimeSignatureChange, ...] = ()  # 박자표와 바뀌는 위치
 
 
 def is_midi_file(path: str | Path) -> bool:
@@ -67,7 +69,20 @@ def read_midi(path: str | Path, subdivision: int = DEFAULT_SUBDIVISION) -> MidiS
         melody=quantize_beat_notes(melody, subdivision),
         accompaniment=quantize_beat_notes(accompaniment, subdivision),
         tempo_changes=_tempo_changes(midi, subdivision),
+        time_signatures=_time_signatures(midi),
     )
+
+
+def _time_signatures(midi: pretty_midi.PrettyMIDI) -> tuple[TimeSignatureChange, ...]:
+    """MIDI에 적힌 박자표(예: 3/4)와 바뀌는 위치를 읽는다. 없으면 4/4로 본다."""
+    changes = tuple(
+        TimeSignatureChange(
+            beat=_snap_beats(midi.time_to_tick(ts.time) / midi.resolution, TEMPO_POSITION_STEPS),
+            text=f"{ts.numerator}/{ts.denominator}",
+        )
+        for ts in midi.time_signature_changes
+    )
+    return normalize_changes(changes)
 
 
 def _to_beats(midi: pretty_midi.PrettyMIDI, note: pretty_midi.Note) -> BeatNote:

@@ -52,6 +52,25 @@ def test_reads_tempo(tmp_path):
     assert song.tempo_bpm == pytest.approx(TEMPO, abs=0.5)
 
 
+def test_reads_time_signature_and_its_change(tmp_path):
+    from transcriber.meters import TimeSignatureChange
+
+    midi = pretty_midi.PrettyMIDI(initial_tempo=TEMPO)
+    piano = pretty_midi.Instrument(program=PIANO)
+    add_notes(piano, [(60, 0, 1), (62, 6, 1)])
+    midi.instruments.append(piano)
+    midi.time_signature_changes.append(pretty_midi.TimeSignature(3, 4, 0))
+    midi.time_signature_changes.append(pretty_midi.TimeSignature(6, 8, 6 * SECONDS_PER_BEAT))
+    midi.write(str(tmp_path / "waltz.mid"))
+
+    song = read_midi(tmp_path / "waltz.mid")
+
+    assert song.time_signatures == (
+        TimeSignatureChange(beat=Fraction(0), text="3/4"),
+        TimeSignatureChange(beat=Fraction(6), text="6/8"),
+    )
+
+
 def test_piano_only_file_has_no_melody(tmp_path):
     song = read_midi(write_song(tmp_path / "piano.mid", with_voice=False))
 

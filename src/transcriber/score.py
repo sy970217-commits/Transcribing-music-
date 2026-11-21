@@ -21,10 +21,16 @@ from music21 import (
 
 from transcriber.lyrics import attach_lyrics
 from transcriber.rhythm import QuantizedNote
+from transcriber.meters import (
+    TimeSignatureChange,
+    bar_length,
+    measure_number_at,
+    normalize_changes,
+    parse_time_signature,
+)
 from transcriber.tempo_marks import TempoChange, TempoMark, plan_tempo_marks
 
 MIDDLE_C = 60  # 가운데 도. 이 음 이상은 오른손(높은음자리표), 아래는 왼손(낮은음자리표)
-DEFAULT_TIME_SIGNATURE = "4/4"
 KEY_WINDOW_MEASURES = 4  # 조성을 이 마디 수씩 끊어서 찾는다
 MIN_KEY_RUN_WINDOWS = 3  # 같은 조표가 3창(12마디) 이상 이어져야 조바꿈으로 인정
 MIN_NOTES_FOR_KEY = 8  # 한 창에 음이 이보다 적으면 조성을 판단하지 않는다
@@ -43,20 +49,25 @@ class ScoreInfo:
     lyricist: str = ""
     key_name: str | None = None
     lyrics: tuple[str, ...] = ()  # 멜로디에 붙일 음절. lyrics.parse_lyrics로 만든다
+    time_signature: str | None = None  # 예: "3/4". 정하면 곡 전체에 이 박자표 하나를 쓴다
 
 
 def build_score(
     notes: tuple[QuantizedNote, ...],
     tempo_bpm: float,
     info: ScoreInfo = ScoreInfo(),
-    time_signature: str = DEFAULT_TIME_SIGNATURE,
+    time_signatures: tuple[TimeSignatureChange, ...] = (),
     melody: tuple[QuantizedNote, ...] = (),
     tempo_changes: tuple[TempoChange, ...] = (),
 ) -> stream.Score:
     """피아노 2단(오른손/왼손) 악보를 만든다. melody가 있으면 맨 위에 멜로디 단을 더한다.
 
     info.lyrics(음절 목록)가 있으면 멜로디 음표에 차례로 붙인다.
+    time_signatures가 없으면 4/4로 쓴다. info.time_signature를 정하면 그것을 쓴다.
     """
+    if info.time_signature:
+        time_signatures = (TimeSignatureChange(beat=Fraction(0), text=info.time_signature),)
+    signatures = normalize_changes(time_signatures)
     if not notes and not melody:
         raise ValueError("악보로 만들 음이 없습니다.")
     if info.lyrics and not melody:
@@ -71,28 +82,28 @@ def build_score(
     left_hand = tuple(n for n in notes if n.pitch < MIDDLE_C)
 
     parts = [
-        _build_part(right_hand, clef.TrebleClef(), time_signature, total_beats),
-        _build_part(left_hand, clef.BassClef(), time_signature, total_beats),
+        _build_part(right_hand, clef.TrebleClef(), signatures, total_beats),
+        _build_part(left_hand, clef.BassClef(), signatures, total_beats),
     ]
     for piano_part in parts:
         piano_part.insert(0, instrument.Piano())
     if melody:
-        melody_part = _build_part(melody, clef.TrebleClef(), time_signature, total_beats)
+        melody_part = _build_part(melody, clef.TrebleClef(), signatures, total_beats)
         # 노래 멜로디는 합창 "아~" 소리(General MIDI 52번)로 연주한다
         melody_part.insert(0, instrument.Choir())
         melody_part.partName = "멜로디"
         attach_lyrics(melody_part, info.lyrics)
         parts.insert(0, melody_part)
     parts[0].insert(0, tempo.MetronomeMark(number=round(tempo_bpm)))
-    bar_length = Fraction(meter.TimeSignature(time_signature).barDuration.quarterLength)
-    for mark in plan_tempo_marks(tempo_changes, total_beats, bar_length):
+    # 조성·빠르기 판단은 첫 박자표의 마디 길이를 기준으로 한다(대부분의 곡은 박자표가 하나)
+    bar_beats = bar_length(signatures[0].text)
+    for mark in plan_tempo_marks(tempo_changes, total_beats, bar_beats):
         parts[0].insert(mark.beat, _tempo_element(mark))
 
     score = stream.Score()
     for part in parts:
         score.insert(0, part)
 
-    bar_beats = meter.TimeSignature(time_signature).barDuration.quarterLength
     for start, song_key in _resolve_keys(notes + melody, bar_beats, info.key_name, melody):
         for part in score.parts:
             part.insert(start, key.Key(song_key.tonic, song_key.mode))
@@ -123,11 +134,13 @@ def key_name_of(score: stream.Score) -> str:
     keys = list(first_part.flatten().getElementsByClass(key.Key)) if first_part else []
     if not keys:
         return "알 수 없음"
-    time_signature = first_part.flatten().getElementsByClass(meter.TimeSignature).first()
-    bar_beats = time_signature.barDuration.quarterLength if time_signature else 4
+    signatures = tuple(
+        TimeSignatureChange(beat=Fraction(ts.offset), text=ts.ratioString)
+        for ts in first_part.flatten().getElementsByClass(meter.TimeSignature)
+    )
     descriptions = [_describe_key(keys[0])]
     for later in keys[1:]:
-        measure = int(later.offset // bar_beats) + 1
+        measure = measure_number_at(later.offset, signatures)
         descriptions.append(f"{measure}마디부터 {_describe_key(later)}")
     return " → ".join(descriptions)
 
@@ -310,12 +323,13 @@ def save_musicxml(score: stream.Score, output_path: str | Path) -> Path:
 def _build_part(
     hand_notes: tuple[QuantizedNote, ...],
     part_clef: clef.Clef,
-    time_signature: str,
+    signatures: tuple[TimeSignatureChange, ...],
     total_beats,
 ) -> stream.Part:
     part = stream.Part()
     part.insert(0, part_clef)
-    part.insert(0, meter.TimeSignature(time_signature))
+    for change in signatures:
+        part.insert(change.beat, parse_time_signature(change.text))
     if not hand_notes:
         part.insert(0, note.Rest(quarterLength=total_beats))
         return part
