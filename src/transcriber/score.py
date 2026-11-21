@@ -28,6 +28,7 @@ from transcriber.meters import (
     normalize_changes,
     parse_time_signature,
 )
+from transcriber.pedals import PedalSpan, attach_pedals
 from transcriber.spelling import respell_part
 from transcriber.tempo_marks import TempoChange, TempoMark, plan_tempo_marks
 
@@ -60,6 +61,7 @@ def build_score(
     time_signatures: tuple[TimeSignatureChange, ...] = (),
     melody: tuple[QuantizedNote, ...] = (),
     tempo_changes: tuple[TempoChange, ...] = (),
+    pedals: tuple[PedalSpan, ...] = (),
 ) -> stream.Score:
     """피아노 2단(오른손/왼손) 악보를 만든다. melody가 있으면 맨 위에 멜로디 단을 더한다.
 
@@ -88,6 +90,8 @@ def build_score(
     ]
     for piano_part in parts:
         piano_part.insert(0, instrument.Piano())
+    # 페달 표시는 피아노 아래 단(왼손) 밑에 적는다. 왼손 음이 없으면 오른손에.
+    attach_pedals(parts[1] if left_hand else parts[0], pedals)
     if melody:
         melody_part = _build_part(melody, clef.TrebleClef(), signatures, total_beats)
         # 노래 멜로디는 합창 "아~" 소리(General MIDI 52번)로 연주한다

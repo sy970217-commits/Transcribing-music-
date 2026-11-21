@@ -81,6 +81,7 @@ def _transcribe_midi(
         time_signatures=song.time_signatures,
         melody=song.melody,
         tempo_changes=tempo_changes,
+        pedals=song.pedals,
     )
     musicxml_path = save_musicxml(score, target_dir / f"{source.stem}.musicxml")
     return TranscriptionResult(

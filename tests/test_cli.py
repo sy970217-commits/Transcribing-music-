@@ -176,6 +176,26 @@ def test_main_rejects_unknown_time_signature(melody_wav, tmp_path, capsys):
     assert "알 수 없는 박자표" in capsys.readouterr().err
 
 
+def test_midi_pedal_becomes_ped_marks(tmp_path):
+    import pretty_midi
+
+    midi = pretty_midi.PrettyMIDI(initial_tempo=120)
+    piano = pretty_midi.Instrument(program=0)
+    for beat in range(8):
+        piano.notes.append(pretty_midi.Note(velocity=80, pitch=48 + beat % 3, start=beat * 0.5, end=beat * 0.5 + 0.5))
+    piano.control_changes.extend(
+        [pretty_midi.ControlChange(64, 127, 0.0), pretty_midi.ControlChange(64, 0, 2.0)]
+    )
+    midi.instruments.append(piano)
+    midi.write(str(tmp_path / "pedal.mid"))
+
+    result = transcribe_file(tmp_path / "pedal.mid", tmp_path / "out")
+
+    xml = result.musicxml_path.read_text(encoding="utf-8")
+    assert '<pedal number="1" sign="yes" type="start"' in xml
+    assert '<pedal number="1" sign="yes" type="stop"' in xml
+
+
 def test_main_reports_missing_file(tmp_path, capsys):
     exit_code = main([str(tmp_path / "nope.mp3")])
 

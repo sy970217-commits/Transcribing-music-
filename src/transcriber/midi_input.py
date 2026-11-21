@@ -18,6 +18,7 @@ from transcriber.rhythm import (
     quantize_beat_notes,
 )
 from transcriber.meters import TimeSignatureChange, normalize_changes
+from transcriber.pedals import PedalSpan, read_pedals
 from transcriber.tempo_marks import TempoChange
 
 MIDI_EXTENSIONS = frozenset({".mid", ".midi"})
@@ -38,6 +39,7 @@ class MidiSong:
     accompaniment: tuple[QuantizedNote, ...]
     tempo_changes: tuple[TempoChange, ...] = ()  # 첫 빠르기 포함, 박 단위 위치
     time_signatures: tuple[TimeSignatureChange, ...] = ()  # 박자표와 바뀌는 위치
+    pedals: tuple[PedalSpan, ...] = ()  # 반주(피아노)의 오른쪽 페달 구간
 
 
 def is_midi_file(path: str | Path) -> bool:
@@ -70,6 +72,7 @@ def read_midi(path: str | Path, subdivision: int = DEFAULT_SUBDIVISION) -> MidiS
         accompaniment=quantize_beat_notes(accompaniment, subdivision),
         tempo_changes=_tempo_changes(midi, subdivision),
         time_signatures=_time_signatures(midi),
+        pedals=read_pedals(midi, [t for t in tracks if t is not melody_track]),
     )
 
 
