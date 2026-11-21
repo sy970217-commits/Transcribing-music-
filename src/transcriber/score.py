@@ -120,8 +120,10 @@ def build_score(
     bar_beats = first_bar
     for mark in plan_tempo_marks(tempo_changes, total_beats, bar_beats):
         if mark.kind == "fermata":
-            for part in parts:
-                _attach_fermatas(part, mark.beat, mark.end_beat)
+            # 피아노 낮은음자리표 단은 위 단과 2칸만 떨어져 있어 위에 둘 자리가 없으므로 빼고,
+            # 멜로디와 피아노 위 단에만 위쪽으로 하나씩 붙인다
+            for part in parts[:-1]:
+                _attach_fermata(part, mark.beat, mark.end_beat)
             continue
         parts[0].insert(mark.beat, _tempo_element(mark))
 
@@ -158,11 +160,15 @@ def _attach_dynamics(part: stream.Part, marks: tuple[DynamicMark, ...]) -> None:
             part.insert(0, hairpin(covered))
 
 
-def _attach_fermatas(part: stream.Part, start: Fraction, end: Fraction) -> None:
-    """start~end 사이에 시작하는 음마다 늘임표(𝄐)를 붙인다."""
-    for element in part.flatten().notes:
-        if start <= element.offset < end:
-            element.expressions.append(expressions.Fermata())
+def _attach_fermata(part: stream.Part, start: Fraction, end: Fraction) -> None:
+    """start~end 사이에 시작하는 음 중 가장 긴 음(같으면 앞의 음) 하나에 늘임표(𝄐)를 위쪽으로 붙인다."""
+    candidates = [n for n in part.flatten().notes if start <= n.offset < end]
+    if not candidates:
+        return
+    held = max(candidates, key=lambda n: (n.duration.quarterLength, -n.offset))
+    fermata = expressions.Fermata()
+    fermata.type = "upright"  # 둥근 쪽이 위로 → 음표 위에 그린다
+    held.expressions.append(fermata)
 
 
 def _tempo_element(mark: TempoMark):

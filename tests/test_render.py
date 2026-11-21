@@ -232,7 +232,8 @@ def test_big_slowdown_shows_fermata_and_still_plays_long(tmp_path):
     xml = score_path.read_text(encoding="utf-8")
     midi = pretty_midi.PrettyMIDI(str(score_to_midi(score_path, tmp_path)))
 
-    assert xml.count("<fermata") == 2  # 7·8번째 음
+    assert xml.count("<fermata") == 1  # 느려진 구간에 하나만
+    assert '<fermata type="upright"' in xml  # 음표 위쪽
     assert midi.get_tempo_changes()[1][-1] == pytest.approx(30, abs=0.5)
 
 

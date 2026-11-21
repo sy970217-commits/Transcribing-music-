@@ -68,3 +68,19 @@ def test_piano_dynamics_go_above_the_upper_staff(tmp_path):
 
     dynamic = re.search(r"<direction[^>]*>\s*<direction-type>\s*<dynamics", piano_part)
     assert dynamic is not None and 'placement="above"' in dynamic.group(0)
+
+
+def test_fermata_goes_above_melody_and_upper_staff_only(tmp_path):
+    from transcriber.tempo_marks import TempoChange
+
+    melody = (q(72, 0, 2), q(74, 2, 2), q(76, 4, 2), q(77, 6), q(79, 7))
+    piano = tuple(q(64, b) for b in range(8)) + tuple(q(48, b) for b in range(8))
+    changes = (TempoChange(Fraction(0), 120), TempoChange(Fraction(6), 30))
+    score = build_score(piano, tempo_bpm=120, melody=melody, tempo_changes=changes)
+    xml = save_musicxml(score, tmp_path / "s.musicxml").read_text(encoding="utf-8")
+
+    melody_part, piano_part = part_xml(xml, 0), part_xml(xml, 1)
+    assert melody_part.count('<fermata type="upright"') == 1
+    assert "".join(staff_notes(piano_part, 1)).count('<fermata type="upright"') == 1
+    assert "<fermata" not in "".join(staff_notes(piano_part, 2))  # 두 단 사이엔 두지 않음
+    assert 'type="inverted"' not in xml
