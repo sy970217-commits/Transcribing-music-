@@ -230,7 +230,9 @@ def test_every_system_starts_with_the_same_distances(tmp_path):
     xml = path.read_text(encoding="utf-8")
 
     melody_part, piano_part = re.findall(r"<part id=.*?</part>", xml, re.S)
-    assert melody_part.count('<print new-system="yes" />') == 2  # 5·9마디에서 줄 바꿈
+    assert melody_part.count('<print new-system="yes">') == 2  # 5·9마디에서 줄 바꿈
+    assert melody_part.count("<system-distance>") == 2  # 줄 사이 간격은 맨 위 파트에(코드가 윗줄과 겹치지 않게)
+    assert "<millimeters>6</millimeters>" in xml  # 빽빽한 마디도 한 줄에 들어가게 오선을 조금 작게
     assert piano_part.count('<print new-system="yes">') == 2
     assert piano_part.count('<staff-layout number="1">') == 3  # 1·5·9마디 모두 같은 간격
     assert piano_part.count('<staff-layout number="2">') == 3
