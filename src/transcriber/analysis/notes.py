@@ -1,0 +1,83 @@
+"""분석기 C단계: 음 인식. 음원(또는 A단계에서 나눈 트랙)에서 음의 높이·시작·끝·세기를 찾는다.
+
+- 소리 분리 결과가 없으면 섞인 음원 전체에서 찾는다(트랙 이름 'mix').
+- 있으면 음높이가 있는 트랙(목소리·피아노·베이스·기타·나머지)마다 따로 찾는다.
+  드럼은 음높이가 없어 빼고, '없다'고 판단된 트랙도 뺀다.
+  - 트랙마다 악기 음역 밖의 음은 버린다(새어 들어온 소리·배음 오인식 줄이기).
+  - 목소리·베이스는 한 번에 한 음만 내므로 겹친 음 중 하나만 남긴다.
+음 찾기는 Spotify Basic Pitch(transcriber.pitch)를 쓴다.
+
+실행: uv run notes 곡.wav [--separate]
+"""
+
+import argparse
+import sys
+from pathlib import Path
+
+from transcriber.analysis.separation import Separation, SeparationError, separate
+from transcriber.audio_io import AudioLoadError
+from transcriber.pitch import Note, PitchDetectionError, detect_notes
+from transcriber.vocal_melody import to_monophonic
+
+# 트랙 → (가장 낮은 음, 가장 높은 음) MIDI 번호
+TRACK_RANGES = {
+    "vocals": (48, 84),  # C3~C6
+    "bass": (28, 64),  # E1~E4
+    "guitar": (40, 88),
+    "piano": (21, 108),  # 피아노 88건반
+    "other": (21, 108),
+}
+MONOPHONIC_TRACKS = frozenset({"vocals", "bass"})
+# 트랙 → (음 시작 기준, 울림 기준, 가장 짧은 음 ms). 문제지 채점으로 고름(시작_F1 평균):
+# 피아노 0.85→0.91, 목소리 0.43→0.77, 베이스 0.62→0.83. 기본값(0.5, 0.4, 128)보다 확실한 시작만 잡는다
+TRACK_SETTINGS = {
+    "piano": (0.7, 0.5, 58.0),
+    "vocals": (0.7, 0.4, 58.0),
+    "bass": (0.7, 0.5, 58.0),
+}
+DEFAULT_SETTINGS = TRACK_SETTINGS["piano"]
+MIX = "mix"
+
+
+def recognize_notes(audio_path: str | Path, separation: Separation | None = None) -> dict[str, tuple[Note, ...]]:
+    """트랙 이름 → 음 목록(시작 순). 소리 분리가 없으면 {'mix': 전체 음}."""
+    if separation is None:
+        return {MIX: _detect(audio_path, MIX)}
+    found = {}
+    for track, path in separation.stems.items():
+        if track not in TRACK_RANGES or not separation.present(track):
+            continue
+        found[track] = clean_track(track, _detect(path, track))
+    return found
+
+
+def _detect(path: str | Path, track: str) -> tuple[Note, ...]:
+    onset, frame, shortest = TRACK_SETTINGS.get(track, DEFAULT_SETTINGS)
+    return detect_notes(path, onset_threshold=onset, frame_threshold=frame, min_note_ms=shortest).notes
+
+
+def clean_track(track: str, notes: tuple[Note, ...]) -> tuple[Note, ...]:
+    """악기 음역 밖의 음을 버리고, 한 음씩 내는 악기는 겹친 음을 하나로 줄인다."""
+    low, high = TRACK_RANGES.get(track, (0, 127))
+    kept = tuple(n for n in notes if low <= n.pitch <= high)
+    return to_monophonic(kept) if track in MONOPHONIC_TRACKS else kept
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="음원에서 음을 찾는다 (분석기 C단계)")
+    parser.add_argument("audio", help="음원 파일")
+    parser.add_argument("--separate", action="store_true", help="먼저 소리를 나눠 트랙마다 찾기(몇 분 걸림)")
+    args = parser.parse_args(argv)
+    try:
+        separation = separate(args.audio) if args.separate else None
+        found = recognize_notes(args.audio, separation)
+    except (AudioLoadError, SeparationError, PitchDetectionError) as error:
+        print(f"오류: {error}", file=sys.stderr)
+        return 1
+    for track, notes in found.items():
+        print(f"{track}: 음 {len(notes)}개")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
