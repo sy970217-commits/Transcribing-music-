@@ -9,8 +9,11 @@
 2. 두 마디 넘게 마디마다 꾸준히 세지면 '점점 세게(<)', 여려지면 '점점 여리게(>)'.
 3. 한 마디만 튀는 셈여림은 앞 마디를 따른다.
 페달(오른쪽 페달)
-1. 코드가 이어지는 구간마다, 그 안에서 친 음들의 남은 울림 중앙값을 본다.
-2. 충분히 남아 있으면 페달을 밟은 것으로 본다. 페달은 코드가 바뀔 때마다 떼었다 다시 밟는다.
+1. 코드 구간을 페달 한 번 단위로 묶는다. 페달은 코드가 바뀔 때마다 떼었다 다시 밟는다.
+   다만 E단계가 한 코드를 잘게 나눈 것으로 보이면 한 묶음으로 둔다.
+   - 뿌리음이 같은 코드끼리(CM → CM/G, Fdim → FM/A)
+   - 앞 구간이 반 마디보다 짧을 때(지나가는 코드)
+2. 묶음마다 그 안에서 친 음들의 남은 울림 중앙값을 보고, 충분히 남아 있으면 페달을 밟은 것으로 본다.
 
 실행: uv run expression 곡.wav
 """
@@ -26,7 +29,7 @@ import librosa
 import numpy as np
 
 from transcriber.analysis.beats import BeatAnalysis
-from transcriber.analysis.harmony import HarmonyResult
+from transcriber.analysis.harmony import ChordSegment, HarmonyResult
 from transcriber.analysis.rhythm import RhythmResult, beat_number, beat_quarters_of, counted_beats
 from transcriber.analysis.tonality import bar_starts
 from transcriber.pitch import Note
@@ -210,6 +213,27 @@ def is_pedalled(sounds: tuple[NoteSound, ...], start: Fraction, end: Fraction) -
     return len(decays) >= MIN_PEDAL_NOTES and median(decays) > PEDAL_DECAY_DB
 
 
+def same_pedal(before: ChordSegment, after: ChordSegment, half_bar: Fraction) -> bool:
+    """두 코드 구간을 페달 한 번으로 이어 밟는가(E단계가 한 코드를 잘게 나눈 것으로 보이면)."""
+    if before.end != after.start:
+        return False
+    if before.end - before.start < half_bar:
+        return True
+    return before.chord is not None and after.chord is not None and before.chord.root == after.chord.root
+
+
+def pedal_spans(chords: tuple[ChordSegment, ...], sounds: tuple[NoteSound, ...], half_bar: Fraction
+                ) -> tuple[PedalSpan, ...]:
+    """코드 구간을 페달 한 번 단위로 묶고, 묶음마다 페달을 밟았는지 본다(짧은 구간은 음이 적어 혼자 판단하기 어렵다)."""
+    groups: list[PedalSpan] = []
+    for i, chord in enumerate(chords):
+        if i and same_pedal(chords[i - 1], chord, half_bar):
+            groups[-1] = PedalSpan(groups[-1].start, chord.end)
+        else:
+            groups.append(PedalSpan(chord.start, chord.end))
+    return tuple(g for g in groups if is_pedalled(sounds, g.start, g.end))
+
+
 def analyze_expression(rhythm: RhythmResult, harmony: HarmonyResult, beats: BeatAnalysis,
                        sounds: tuple[NoteSound, ...]) -> ExpressionResult:
     """박에 맞춘 음 + 코드 + 음마다 잰 소리 → 셈여림 구간, 페달 구간."""
@@ -218,7 +242,8 @@ def analyze_expression(rhythm: RhythmResult, harmony: HarmonyResult, beats: Beat
     end = max(n.start + n.length for n in rhythm.notes)
     starts = bar_starts(beats, rhythm.beat_quarters, end)
     bounds = list(zip(starts, starts[1:] + [end]))
-    pedals = tuple(PedalSpan(c.start, c.end) for c in harmony.chords if is_pedalled(sounds, c.start, c.end))
+    half_bar = beats.beats_per_bar * rhythm.beat_quarters / 2
+    pedals = pedal_spans(harmony.chords, sounds, half_bar)
     return ExpressionResult(analyze_dynamics(sounds, bounds), pedals)
 
 

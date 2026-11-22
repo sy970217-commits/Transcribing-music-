@@ -4,7 +4,7 @@ import numpy as np
 
 from transcriber.analysis.beats import BeatAnalysis
 from transcriber.analysis.expression import (
-    NoteSound, analyze_expression, bar_marks, decay_check_time, main, measure_sounds,
+    NoteSound, PedalSpan, analyze_expression, bar_marks, decay_check_time, main, measure_sounds, pedal_spans,
 )
 from transcriber.analysis.harmony import ChordSegment, HarmonyResult
 from transcriber.analysis.rhythm import RhythmNote, RhythmResult
@@ -91,3 +91,19 @@ def test_no_notes():
 def test_cli_missing_file(capsys):
     assert main(["없는파일.wav"]) == 1
     assert "오류" in capsys.readouterr().err
+
+
+def test_pedal_held_across_split_of_same_chord():
+    from transcriber.chord_names import Chord
+
+    rich = tuple(NoteSound(float(p), 70, -10.0) for p in range(8))
+    chords = (
+        ChordSegment(Fraction(0), Fraction(2), Chord(0, "M", 0)),  # CM
+        ChordSegment(Fraction(2), Fraction(4), Chord(0, "M", 7)),  # CM/G: 같은 코드를 나눈 것
+        ChordSegment(Fraction(4), Fraction(5), Chord(7, "7", 5)),  # 짧게 지나가는 G7/F
+        ChordSegment(Fraction(5), Fraction(8), Chord(9, "m", 9)),  # Am
+    )
+
+    spans = pedal_spans(chords, rich, Fraction(2))
+
+    assert spans == (PedalSpan(Fraction(0), Fraction(4)), PedalSpan(Fraction(4), Fraction(8)))
