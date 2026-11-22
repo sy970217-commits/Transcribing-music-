@@ -148,8 +148,13 @@ def analyze_structure(rhythm: RhythmResult, beats: BeatAnalysis) -> StructureRes
     end = max(n.start + n.length for n in rhythm.notes)
     starts = bar_starts(beats, rhythm.beat_quarters, end)
     bounds = list(zip(starts, starts[1:] + [end]))
-    groups = phrase_groups(len(bounds), beats.pickup_beats > 0)
-    prints = [[bar_fingerprint(rhythm.notes, *bounds[b]) for b in group] for group in groups]
+    if len(bounds) > 1 and bounds[-1][1] - bounds[-1][0] < beats.beats_per_bar * rhythm.beat_quarters / 2:
+        bounds = bounds[:-2] + [(bounds[-2][0], end)]  # 끝의 짧은 꼬리(남은 울림)는 앞 마디에 붙인다
+    has_pickup = beats.pickup_beats > 0
+    groups = phrase_groups(len(bounds), has_pickup)
+    # 못갖춘마디는 비교에서 뺀다(첫 구절도 다른 구절처럼 4마디로 비교)
+    prints = [[bar_fingerprint(rhythm.notes, *bounds[b]) for b in group if not (has_pickup and b == 0)]
+              for group in groups]
     sections, kinds, phrase = [], [], 0
     for unit in group_phrases(name_phrases(prints)):
         if unit not in kinds:

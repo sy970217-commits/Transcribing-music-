@@ -59,3 +59,20 @@ def test_no_notes_gives_no_sections():
 def test_cli_reports_missing_file(capsys):
     assert main(["없는파일.wav"]) == 1
     assert "오류" in capsys.readouterr().err
+
+
+def test_pickup_bar_does_not_hide_first_phrase():
+    beats = BeatAnalysis(beats=(0.0, 0.5), downbeats=(0.5,), time_signature="4/4", beats_per_bar=4,
+                         pulses_per_beat=2, tempo_bpm=120.0, pickup_beats=1)
+    base = song([X, X, Y, X])
+    notes = (RhythmNote(67, Fraction(0), Fraction(1), 80),) + tuple(
+        RhythmNote(n.pitch, n.start + 1, n.length, n.velocity) for n in base.notes)
+    sections = analyze_structure(RhythmResult(notes, "4/4", Fraction(1)), beats).sections
+    assert [(s.start, s.label) for s in sections] == [(0, "A"), (17, "A"), (33, "B"), (49, "A")]
+
+
+def test_short_tail_joins_last_bar():
+    base = song([X, Y, X, Y])
+    tail = RhythmNote(36, Fraction(64) + Fraction(1, 2), Fraction(1, 4), 30)
+    sections = analyze_structure(RhythmResult(base.notes + (tail,), "4/4", Fraction(1)), BEATS).sections
+    assert [s.label for s in sections] == ["A", "A"] and sections[-1].end == Fraction(259, 4)
