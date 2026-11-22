@@ -86,7 +86,7 @@ def build_score(
         raise ValueError("악보로 만들 음이 없습니다.")
     if info.lyrics and not melody:
         raise ValueError(
-            "가사를 붙이려면 멜로디 단이 필요해요. MIDI 파일을 넣거나 --vocals를 함께 쓰세요."
+            "가사를 붙이려면 멜로디 단이 필요해요. MIDI 파일에 멜로디 트랙이 있는지 확인해 주세요."
         )
     if tempo_bpm <= 0:
         raise ValueError(f"템포는 0보다 커야 합니다: {tempo_bpm}")

@@ -27,7 +27,7 @@ def test_audio_becomes_sheet_and_score(melody_wav, tmp_path):
 
     assert result.musicxml_path == tmp_path / "melody.musicxml"
     assert result.sheet_path == tmp_path / "melody_분석표.json"
-    assert result.sheet_path.exists() and result.midi_path is None
+    assert result.sheet_path.exists()
     pitches = {p.midi for n in converter.parse(str(result.musicxml_path)).recurse().notes for p in n.pitches}
     assert pitches and pitches <= set(TUNE)
 
@@ -74,45 +74,8 @@ def test_midi_file_becomes_score_with_melody_staff(tmp_path):
     result = transcribe_file(tmp_path / "song.mid", tmp_path / "out")
 
     loaded = converter.parse(str(result.musicxml_path))
-    assert result.midi_path is None
     assert len(loaded.parts) == 3
     assert [p.midi for n in loaded.parts[0].recurse().notes for p in n.pitches] == [72]
-
-
-def test_vocals_option_adds_melody_staff(melody_wav, tmp_path, monkeypatch):
-    from transcriber import cli
-    from transcriber.pitch import Note
-    from transcriber.vocal_melody import VocalParts
-
-    sung = (Note(start_seconds=0.0, end_seconds=0.5, pitch=76, velocity=90),)
-    monkeypatch.setattr(
-        cli,
-        "extract_vocal_parts",
-        lambda source, work_dir: VocalParts(melody=sung, accompaniment_path=source, has_voice=True),
-    )
-
-    result = transcribe_file(melody_wav, tmp_path, tempo_bpm=120, vocals=True)
-
-    loaded = converter.parse(str(result.musicxml_path))
-    assert result.voice_found is True
-    assert len(loaded.parts) == 3
-    assert [p.midi for n in loaded.parts[0].recurse().notes for p in n.pitches] == [76]
-
-
-def test_main_warns_when_no_voice_found(melody_wav, tmp_path, monkeypatch, capsys):
-    from transcriber import cli
-    from transcriber.vocal_melody import VocalParts
-
-    monkeypatch.setattr(
-        cli,
-        "extract_vocal_parts",
-        lambda source, work_dir: VocalParts(melody=(), accompaniment_path=source, has_voice=False),
-    )
-
-    exit_code = main([str(melody_wav), "--output-dir", str(tmp_path), "--tempo", "120", "--vocals"])
-
-    assert exit_code == EXIT_OK
-    assert "목소리를 찾지 못해" in capsys.readouterr().out
 
 
 def write_voice_and_piano_midi(path, melody_pitches):
