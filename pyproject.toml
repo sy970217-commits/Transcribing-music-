@@ -23,6 +23,7 @@ beats = "transcriber.analysis.beats:main"
 notes = "transcriber.analysis.notes:main"
 rhythm = "transcriber.analysis.rhythm:main"
 harmony = "transcriber.analysis.harmony:main"
+key = "transcriber.analysis.tonality:main"
 
 [dependency-groups]
 dev = ["pytest>=8"]
