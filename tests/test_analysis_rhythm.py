@@ -44,11 +44,20 @@ def test_each_beat_chooses_triplets_or_sixteenths_by_itself():
     assert starts == [0, Fraction(1, 3), Fraction(2, 3), 1, Fraction(5, 4), Fraction(3, 2), Fraction(7, 4)]
 
 
-def test_melody_without_triplets_snaps_to_eighths_and_sixteenths():
+def test_three_evenly_spaced_notes_in_a_beat_stay_triplets_without_triplet_grid():
     beats = beats_at([i * 0.6 for i in range(8)])
     triplets = tuple(n(60 + k, k * 0.2, k * 0.2 + 0.2) for k in range(3))
 
     result = quantize_notes(triplets, beats, allow_triplets=False)
+
+    assert placed(result) == [(60 + k, Fraction(k, 3), Fraction(1, 3)) for k in range(3)]
+
+
+def test_without_triplet_grid_a_lone_off_note_snaps_to_sixteenths():
+    beats = beats_at([i * 0.6 for i in range(8)])
+    notes = (n(60, 0.0, 0.2), n(62, 0.2, 0.6))  # 박 안에 음 2개뿐: 셋잇단으로 보지 않는다
+
+    result = quantize_notes(notes, beats, allow_triplets=False)
 
     assert all((x.start * 4).denominator == 1 and (x.length * 4).denominator == 1 for x in result.notes)
 

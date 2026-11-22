@@ -26,6 +26,9 @@ SIMPLE_DIVISIONS = (1, 2, 3, 4)  # 4분음표 박: 그대로, 8분, 셋잇단, 1
 # 노래 멜로디는 셋잇단이 드물다. 셋잇단을 허락하면 시작은 셋잇단, 끝은 16분에 맞아 7/12 같은 어색한 길이가 생긴다
 # (시험 곡 멜로디의 어색한 길이 122→85개)
 NO_TRIPLET_DIVISIONS = (1, 2, 4)
+# 셋잇단 칸을 안 쓸 때도, 한 박 안에 음 3개가 박을 똑같이 셋으로 나눈 자리에서 시작하면 셋잇단으로 적는다
+TRIPLET = 3
+CHORD_SPREAD = 0.05  # 박 길이 대비 이만큼 안에 시작한 음들은 한 화음(한 자리)으로 센다
 COMPOUND_DIVISIONS = (1, 3, 6)  # 점4분음표 박(6/8 등): 그대로, 8분, 16분
 FIT_TOLERANCE = 0.07  # 박 길이 대비 이만큼 안이면 칸에 맞는다고 본다
 EARLY_SHARE = 0.125  # 박보다 이만큼(박 길이 대비) 일찍 시작한 음은 그 박의 첫 칸으로 본다
@@ -115,7 +118,7 @@ def snap_end(value: float, divisions: tuple[int, ...]) -> Fraction:
 
 
 def quantize_notes(notes: tuple[Note, ...], beats: BeatAnalysis, allow_triplets: bool = True) -> RhythmResult:
-    """음 목록을 박에 맞춰 4분음표 단위 위치·길이로 바꾼다. allow_triplets가 거짓이면 셋잇단 칸을 쓰지 않는다."""
+    """음 목록을 박에 맞춰 4분음표 단위 위치·길이로 바꾼다. allow_triplets가 거짓이면 셋잇단 칸을 쓰지 않는다(박을 똑같이 셋으로 나눈 음 3개만 셋잇단)."""
     beat_times = np.asarray(beats.beats, dtype=float)
     if len(beat_times) < 2:
         raise RhythmError("박이 2개보다 적어 리듬을 정리할 수 없어요")
@@ -131,17 +134,34 @@ def quantize_notes(notes: tuple[Note, ...], beats: BeatAnalysis, allow_triplets:
         beat_number(np.array([n.end_seconds for n in notes]), beat_times, numbers),
     )
     owner = np.floor(starts + EARLY_SHARE).astype(int)
-    division_of = {
-        beat: choose_division([float(s - beat) for s in starts[owner == beat]], divisions) for beat in set(owner)
-    }
+    division_of = {beat: _beat_division([float(s - beat) for s in starts[owner == beat]], divisions) for beat in set(owner)}
     result = []
     for note, start, end, beat in zip(notes, starts, ends, owner):
         division = division_of[beat]
+        end_divisions = divisions if division in divisions else divisions + (division,)
         begin = beat + snap(float(start - beat), division)
-        finish = max(snap_end(float(end), divisions), begin + Fraction(1, max(divisions)))
+        finish = max(snap_end(float(end), end_divisions), begin + Fraction(1, max(end_divisions)))
         result.append(RhythmNote(note.pitch, begin * unit, (finish - begin) * unit, note.velocity))
     ordered = tuple(sorted(result, key=lambda n: (n.start, n.pitch)))
     return RhythmResult(ordered, beats.time_signature, unit)
+
+
+def _beat_division(offsets: list[float], divisions: tuple[int, ...]) -> int:
+    """한 박의 나눔 칸 수. 셋잇단 칸을 안 쓰더라도 음 3개가 박을 똑같이 셋으로 나누면 셋잇단으로 본다."""
+    if TRIPLET not in divisions and is_even_triplet(offsets):
+        return TRIPLET
+    return choose_division(offsets, divisions)
+
+
+def is_even_triplet(offsets: list[float]) -> bool:
+    """박 안 시작 위치(0~1)들이 서로 다른 세 자리 0, 1/3, 2/3에 하나씩 있으면 참. 같은 때 시작한 화음은 한 자리로 센다."""
+    places: list[float] = []
+    for offset in sorted(offsets):
+        if not places or offset - places[-1] > CHORD_SPREAD:
+            places.append(offset)
+    if len(places) != TRIPLET:
+        return False
+    return all(abs(place - k / TRIPLET) <= FIT_TOLERANCE for k, place in enumerate(places))
 
 
 def _divisions_for(beats: BeatAnalysis, allow_triplets: bool) -> tuple[int, ...]:
