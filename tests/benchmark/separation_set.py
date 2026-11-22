@@ -38,7 +38,7 @@ MELODY = [72, 74, 76, 77, 76, 74, 72, 71, 69, 71, 72, 74, 72, 71, 69, 67]  # 2�
 
 @dataclass(frozen=True)
 class Track:
-    stem: str  # 정답 트랙 이름(vocals·drums·bass·other)
+    stem: str  # 정답 트랙 이름(vocals·drums·bass·piano)
     program: int  # 악기 번호(General MIDI)
     channel: int
     notes: tuple[tuple[int, float, float, int], ...]  # (음, 시작 박, 길이 박, 세기)
@@ -51,7 +51,7 @@ def piano_part() -> Track:
         for beat in range(4):  # 박마다 화음
             notes += [(p, bar * 4 + beat, 0.9, 70) for p in chord]
         notes.append((bass, bar * 4, 3.9, 75))
-    return Track("other", 0, 0, tuple(notes))
+    return Track("piano", 0, 0, tuple(notes))
 
 
 def voice_part() -> Track:
@@ -79,7 +79,15 @@ PROBLEMS = {
     "02_피아노만": (piano_part(),),
     "03_밴드": (voice_part(), piano_part(), bass_part(), drum_part()),
 }
-ALL_STEMS = ("vocals", "drums", "bass", "other")
+ALL_STEMS = ("vocals", "drums", "bass", "piano")
+
+
+def model_stem(answer_stem: str, model: str) -> str:
+    """정답 트랙이 그 모델에서는 어느 트랙으로 나오는지. 피아노 트랙이 없는 모델은 '나머지(other)'로 나온다."""
+    from transcriber.analysis.separation import MODEL_STEMS
+
+    stems = MODEL_STEMS[model]
+    return answer_stem if answer_stem in stems else "other"
 
 
 def write_midi(tracks: tuple[Track, ...], path: Path) -> None:
@@ -154,13 +162,17 @@ def grade(model: str = "htdemucs") -> dict:
         result = separate(problem, AUDIO_DIR / name / "결과", model)
         mix = load_audio(problem).samples
         scores = {}
+        used = set()
         for stem in answer["있어야_하는_트랙"]:
+            out = model_stem(stem, model)
+            used.add(out)
             reference = load_audio(AUDIO_DIR / name / f"answer_{stem}.wav").samples
-            scores[stem] = {"닮음_dB": round(si_sdr(load_audio(result.stems[stem]).samples, reference), 1),
-                            "있다고_판단": result.present(stem)}
-        for stem in answer["없어야_하는_트랙"]:
-            scores[stem] = {"새어나옴_dB": round(leakage_db(load_audio(result.stems[stem]).samples, mix), 1),
-                            "있다고_판단": result.present(stem)}
+            scores[stem] = {"닮음_dB": round(si_sdr(load_audio(result.stems[out]).samples, reference), 1),
+                            "있다고_판단": result.present(out)}
+        for out in result.stems:  # 정답에 없는 트랙(그 모델의 나머지 트랙 포함)은 비어 있어야 한다
+            if out not in used:
+                scores[out] = {"새어나옴_dB": round(leakage_db(load_audio(result.stems[out]).samples, mix), 1),
+                               "있다고_판단": result.present(out)}
         report[name] = scores
     out = AUDIO_DIR / f"채점_{model}.json"
     out.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
