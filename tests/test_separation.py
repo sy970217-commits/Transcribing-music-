@@ -93,3 +93,11 @@ def test_missing_stem_and_unknown_model_are_errors(tmp_path, song):
 def test_cli_reports_bad_file(capsys):
     assert main(["없는파일.wav"]) == 1
     assert "오류" in capsys.readouterr().err
+
+
+def test_near_silent_windows_are_ignored():
+    # 15초 연주 + 15초 거의 무음(잔향). 무음 구간에 새어 나온 아주 작은 소리는 세지 않음
+    mix = np.concatenate([tone(440, seconds=15), tone(440, seconds=15, level=0.001)])
+    leak = np.concatenate([np.zeros(RATE * 15, dtype=np.float32), tone(60, seconds=15, level=0.0005)])
+
+    assert stem_presence(leak, mix) == 0.0

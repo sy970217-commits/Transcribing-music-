@@ -44,6 +44,9 @@ SUMMARY_FILE = "분리정보.json"
 PRESENCE_WINDOW_SECONDS = 5.0
 MIN_ENERGY_RATIO = 0.1
 PRESENT_SHARE = 0.2  # 들림 정도가 이 이상이면 '이 악기가 있다'
+# 곡 평균 소리의 1%도 안 되는 거의 조용한 구간(곡 끝 잔향 등)은 세지 않는다.
+# 그런 구간에서는 아주 작은 새어 나온 소리도 '섞인 소리의 10% 이상'이 되어 악기가 있다고 잘못 판단한다
+SILENT_RATIO = 0.01
 
 # (음원 경로, 결과 폴더, 모델 이름) → {트랙 이름: wav 경로}
 Separator = Callable[[Path, Path, str], dict[str, Path]]
@@ -86,21 +89,27 @@ def separate(
     missing = [name for name in MODEL_STEMS[model] if name not in stems or not Path(stems[name]).is_file()]
     if missing:
         raise SeparationError(f"분리된 트랙이 없어요: {', '.join(missing)}")
-    mix = _mono(source)
-    presence = {name: round(stem_presence(_mono(path), mix), 3) for name, path in stems.items()}
-    result = Separation(source=source, model=model, stems={k: Path(v) for k, v in stems.items()}, presence=presence)
+    result = _with_presence(source, model, {k: Path(v) for k, v in stems.items()})
     _save_summary(result, target)
     return result
+
+
+def _with_presence(source: Path, model: str, stems: dict[str, Path]) -> Separation:
+    """트랙마다 들림 정도를 계산한다(저장된 분리 결과에도 매번 새로 계산해 판단 기준이 바뀌어도 맞게)."""
+    mix = _mono(source)
+    presence = {name: round(stem_presence(_mono(path), mix), 3) for name, path in stems.items()}
+    return Separation(source=source, model=model, stems=stems, presence=presence)
 
 
 def stem_presence(stem: np.ndarray, mix: np.ndarray, sample_rate: int = 22050) -> float:
     """곡 구간 중 트랙 소리가 섞인 소리의 MIN_ENERGY_RATIO 이상인 구간의 비율(0~1)."""
     window = int(PRESENCE_WINDOW_SECONDS * sample_rate)
     length = min(len(stem), len(mix))
+    silent = SILENT_RATIO * _energy(mix[:length])
     checked = loud = 0
     for start in range(0, length, window):
         mix_energy = _energy(mix[start : start + window])
-        if mix_energy <= 0:
+        if mix_energy <= silent or mix_energy <= 0:
             continue
         checked += 1
         loud += _energy(stem[start : start + window]) >= MIN_ENERGY_RATIO * mix_energy
@@ -122,8 +131,7 @@ def _load_cached(source: Path, target: Path, model: str) -> Separation | None:
     stems = {name: target / f"{name}.wav" for name in MODEL_STEMS[model]}
     if not all(path.is_file() for path in stems.values()):
         return None
-    saved = json.loads(summary_path.read_text(encoding="utf-8"))
-    return Separation(source=source, model=model, stems=stems, presence=saved.get("presence", {}))
+    return _with_presence(source, model, stems)
 
 
 def _save_summary(result: Separation, target: Path) -> None:
