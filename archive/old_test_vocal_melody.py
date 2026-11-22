@@ -1,9 +1,11 @@
+"""(보관) 예전 vocal_melody 테스트. 파일 이름이 test_로 시작하지 않아 pytest가 돌리지 않는다."""
+
 import numpy as np
 import soundfile as sf
 
 from transcriber import vocal_melody
 from transcriber.pitch import Note
-from transcriber.vocal_melody import extract_vocal_parts, has_voice, to_monophonic
+from transcriber.vocal_melody import extract_vocal_parts, has_voice
 
 SAMPLE_RATE = 22050
 A4_MIDI, C5_MIDI = 69, 72
@@ -11,18 +13,6 @@ A4_MIDI, C5_MIDI = 69, 72
 
 def n(start, end, pitch, velocity=80):
     return Note(start_seconds=start, end_seconds=end, pitch=pitch, velocity=velocity)
-
-
-def test_keeps_loudest_of_notes_starting_together():
-    melody = to_monophonic((n(0.0, 1.0, 60, velocity=40), n(0.01, 1.0, 67, velocity=100)))
-
-    assert [x.pitch for x in melody] == [67]
-
-
-def test_cuts_previous_note_when_next_starts():
-    melody = to_monophonic((n(0.0, 2.0, 60), n(1.0, 2.0, 62)))
-
-    assert [(x.pitch, x.end_seconds) for x in melody] == [(60, 1.0), (62, 2.0)]
 
 
 def test_detects_voice_by_relative_energy():

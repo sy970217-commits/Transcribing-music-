@@ -4,7 +4,7 @@ import pytest
 import soundfile as sf
 
 from transcriber.audio_io import AudioLoadError
-from transcriber.pitch import detect_notes, save_midi
+from transcriber.pitch import detect_notes
 
 SAMPLE_RATE = 22050
 A4_MIDI = 69  # 라 음
@@ -39,14 +39,6 @@ def test_note_timing_matches_melody(melody_result):
 
     assert first.start_seconds == pytest.approx(0.0, abs=0.1)
     assert second.start_seconds == pytest.approx(0.5, abs=0.1)
-
-
-def test_saves_readable_midi_file(melody_result, tmp_path):
-    midi_path = save_midi(melody_result, tmp_path / "out" / "melody.mid")
-
-    loaded = pretty_midi.PrettyMIDI(str(midi_path))
-    saved_pitches = sorted(n.pitch for inst in loaded.instruments for n in inst.notes)
-    assert saved_pitches == [A4_MIDI, C5_MIDI]
 
 
 def test_missing_file_raises_clear_error(tmp_path):

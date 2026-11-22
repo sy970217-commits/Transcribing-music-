@@ -1,21 +1,13 @@
-"""템포(빠르기)를 찾고, 음 길이를 악보용 박자 단위로 정리(퀀타이즈)하는 모듈."""
+"""박 단위로 잰 음의 시작과 길이를 악보용 박자 칸에 맞추는(퀀타이즈) 모듈."""
 
 import math
 from dataclasses import dataclass
 from fractions import Fraction
-from pathlib import Path
 
-import librosa
-import numpy as np
 
-from transcriber.audio_io import load_audio
-from transcriber.pitch import Note
 from transcriber.rolls import mark_rolled_chords
 
 DEFAULT_TEMPO_BPM = 120.0
-MIN_TEMPO_BPM = 40.0
-MAX_TEMPO_BPM = 240.0
-SECONDS_PER_MINUTE = 60.0
 DEFAULT_SUBDIVISION = 4  # 한 박을 4칸으로 나눔 = 16분음표 단위
 TRIPLET_DIVISION = 3  # 한 박을 3칸으로 나눔 = 8분음표 셋잇단음표
 # 셋잇단음표 칸의 어긋남이 16분음표 칸의 절반보다 작을 때만 셋잇단음표로 본다
@@ -34,41 +26,6 @@ class QuantizedNote:
     start_beats: Fraction
     duration_beats: Fraction
     rolled: bool = False  # 아르페지오(펼친 화음)로 친 음
-
-
-def estimate_tempo(audio_path: str | Path) -> float:
-    """음원의 템포(BPM, 1분당 박 수)를 찾는다. 못 찾으면 120을 쓴다."""
-    audio = load_audio(audio_path)
-    tempo, _ = librosa.beat.beat_track(y=audio.samples, sr=audio.sample_rate)
-    bpm = float(np.atleast_1d(tempo)[0])
-    if not MIN_TEMPO_BPM <= bpm <= MAX_TEMPO_BPM:
-        return DEFAULT_TEMPO_BPM
-    return bpm
-
-
-def quantize_notes(
-    notes: tuple[Note, ...],
-    tempo_bpm: float,
-    subdivision: int = DEFAULT_SUBDIVISION,
-    split_pitch: int | None = None,
-) -> tuple[QuantizedNote, ...]:
-    """음의 시작과 길이를 가장 가까운 박자 칸에 맞춘다."""
-    if tempo_bpm <= 0:
-        raise ValueError(f"템포는 0보다 커야 합니다: {tempo_bpm}")
-    if subdivision <= 0:
-        raise ValueError(f"박 나누기 수는 0보다 커야 합니다: {subdivision}")
-
-    seconds_per_beat = SECONDS_PER_MINUTE / tempo_bpm
-    raw = tuple(
-        BeatNote(
-            pitch=n.pitch,
-            velocity=n.velocity,
-            start_beats=n.start_seconds / seconds_per_beat,
-            end_beats=n.end_seconds / seconds_per_beat,
-        )
-        for n in notes
-    )
-    return quantize_beat_notes(raw, subdivision, split_pitch)
 
 
 @dataclass(frozen=True)

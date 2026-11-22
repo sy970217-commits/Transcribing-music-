@@ -17,7 +17,6 @@ from pathlib import Path
 from transcriber.analysis.separation import Separation, SeparationError, separate
 from transcriber.audio_io import AudioLoadError
 from transcriber.pitch import Note, PitchDetectionError, detect_notes
-from transcriber.vocal_melody import to_monophonic
 
 # 트랙 → (가장 낮은 음, 가장 높은 음) MIDI 번호
 TRACK_RANGES = {
@@ -28,6 +27,7 @@ TRACK_RANGES = {
     "other": (21, 108),
 }
 MONOPHONIC_TRACKS = frozenset({"vocals", "bass"})
+SAME_START_SECONDS = 0.05  # 이 시간 안에 시작한 음들은 동시에 시작한 것으로 본다
 # 트랙 → (음 시작 기준, 울림 기준, 가장 짧은 음 ms, 이어 붙이기). 문제지 채점으로 고름(시작_F1 평균):
 # 피아노 0.85→0.91, 목소리 0.43→0.77, 베이스 0.62→0.83. 기본값(0.5, 0.4, 128)보다 확실한 시작만 잡는다
 # 피아노는 소리가 서서히 작아져 음 끝이 일찍 잘린다. 분리한 피아노 트랙은 소리가 약해 울림 기준을 0.3으로
@@ -40,6 +40,30 @@ TRACK_SETTINGS = {
 MIX_SETTINGS = (0.7, 0.5, 58.0, False)  # 섞인 음원 전체(피아노 독주 기준)
 DEFAULT_SETTINGS = TRACK_SETTINGS["piano"]
 MIX = "mix"
+
+
+def to_monophonic(notes: tuple[Note, ...]) -> tuple[Note, ...]:
+    """노래는 한 번에 한 음만 낸다. 겹치는 음을 정리해 한 줄 멜로디로 만든다.
+
+    동시에 시작한 음 중에서는 가장 센 음을 남기고, 앞 음은 다음 음이 시작할 때 끊는다.
+    """
+    ordered = sorted(notes, key=lambda n: (n.start_seconds, -n.velocity))
+    melody: list[Note] = []
+    for current in ordered:
+        if melody and current.start_seconds - melody[-1].start_seconds < SAME_START_SECONDS:
+            if current.velocity > melody[-1].velocity:
+                melody[-1] = current
+            continue
+        if melody and melody[-1].end_seconds > current.start_seconds:
+            previous = melody[-1]
+            melody[-1] = Note(
+                start_seconds=previous.start_seconds,
+                end_seconds=current.start_seconds,
+                pitch=previous.pitch,
+                velocity=previous.velocity,
+            )
+        melody.append(current)
+    return tuple(melody)
 
 
 def recognize_notes(audio_path: str | Path, separation: Separation | None = None) -> dict[str, tuple[Note, ...]]:

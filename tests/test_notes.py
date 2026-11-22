@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 
 import transcriber.analysis.notes as notes_module
-from transcriber.analysis.notes import MIX, MIX_SETTINGS, TRACK_SETTINGS, clean_track, main, recognize_notes
+from transcriber.analysis.notes import MIX, MIX_SETTINGS, TRACK_SETTINGS, clean_track, main, recognize_notes, to_monophonic
 from transcriber.analysis.separation import Separation
 from transcriber.pitch import Note, PitchResult
 
@@ -74,3 +74,15 @@ def test_separated_piano_keeps_notes_longer_than_the_mix(monkeypatch, tmp_path):
 def test_cli_reports_bad_file(capsys):
     assert main(["없는파일.wav"]) == 1
     assert "오류" in capsys.readouterr().err
+
+
+def test_keeps_loudest_of_notes_starting_together():
+    melody = to_monophonic((n(60, 0.0, 1.0, velocity=40), n(67, 0.01, 1.0, velocity=100)))
+
+    assert [x.pitch for x in melody] == [67]
+
+
+def test_cuts_previous_note_when_next_starts():
+    melody = to_monophonic((n(60, 0.0, 2.0), n(62, 1.0, 2.0)))
+
+    assert [(x.pitch, x.end_seconds) for x in melody] == [(60, 1.0), (62, 2.0)]
