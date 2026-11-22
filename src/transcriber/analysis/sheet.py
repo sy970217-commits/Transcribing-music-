@@ -10,6 +10,7 @@
 - melody: 멜로디 음·가사·구절(I)
 - separation: 소리 분리 결과(A). --separate를 줄 때만 한다(몇 분 걸림)
   - 나누면 트랙마다 음을 찾아 합치고, 목소리 트랙이 있으면 멜로디는 목소리 트랙에서 찾는다.
+  - accompaniment: 목소리 트랙을 뺀 반주 음. 악보의 피아노 단에 멜로디가 또 들어가지 않게 한다.
   - 안 나누면 섞인 소리 전체(mix)에서 음을 찾는다.
 
 분석표는 JSON 파일로도 저장해서, 악보가 이상할 때 어느 단계가 틀렸는지 찾기 쉽게 한다.
@@ -47,6 +48,7 @@ class AnalysisSheet:
     expression: ExpressionResult
     melody: MelodyResult
     separation: Separation | None = None
+    accompaniment: RhythmResult | None = None  # 목소리를 뺀 반주 음(목소리 트랙을 나눴을 때만)
 
 
 def analyze_song(
@@ -68,6 +70,8 @@ def analyze_song(
     rhythm = quantize_notes(notes, beats)
     vocals = found.get("vocals")
     melody_source = quantize_notes(vocals, beats) if vocals else rhythm
+    backing = {track: found_notes for track, found_notes in found.items() if track != "vocals"}
+    accompaniment = quantize_notes(merge_tracks(backing), beats) if vocals else None
     harmony = analyze_harmony(rhythm, beats)
     sounds = measure_sounds(audio_path, notes, beats)
     return AnalysisSheet(
@@ -79,6 +83,7 @@ def analyze_song(
         expression=analyze_expression(rhythm, harmony, beats, sounds),
         melody=analyze_melody(melody_source, lyrics_text),
         separation=separation,
+        accompaniment=accompaniment,
     )
 
 

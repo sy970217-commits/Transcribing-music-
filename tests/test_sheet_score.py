@@ -6,6 +6,7 @@ from music21 import expressions, key
 from test_analysis_sheet import small_sheet
 from transcriber.analysis.beats import BeatAnalysis
 from transcriber.analysis.melody import MelodyNote, MelodyResult
+from transcriber.analysis.rhythm import RhythmNote, RhythmResult
 from transcriber.analysis.tonality import KeySegment
 from transcriber.sheet_score import key_name_of, pickup_shift, score_from_sheet
 
@@ -34,3 +35,26 @@ def test_pickup_moves_notes_to_end_of_first_bar():
     assert pickup_shift(sheet) == 3
     first = score_from_sheet(replace(sheet, melody=MelodyResult((MelodyNote(60, Fraction(0), Fraction(1)),), ())))
     assert first.parts[0].recurse().notes.first().getOffsetInHierarchy(first.parts[0]) == 3
+
+
+def test_separated_voice_is_not_repeated_in_piano_staff():
+    backing = RhythmResult((RhythmNote(48, Fraction(0), Fraction(2), 60),), "4/4", Fraction(1))
+    score = score_from_sheet(replace(small_sheet(), accompaniment=backing))
+    piano_pitches = [p.midi for part in score.parts[1:] for n in part.recurse().notes for p in n.pitches]
+    assert piano_pitches == [48]  # 멜로디 단의 60은 피아노 단에 다시 적지 않는다
+
+
+def test_without_melody_staff_piano_keeps_all_notes():
+    backing = RhythmResult((), "4/4", Fraction(1))
+    sheet = replace(small_sheet(), accompaniment=backing, melody=MelodyResult((), ()))
+    score = score_from_sheet(sheet)
+    assert [p.midi for n in score.recurse().notes for p in n.pitches] == [60]
+
+
+def test_separated_voice_gets_melody_staff_without_lyrics():
+    backing = RhythmResult((RhythmNote(48, Fraction(0), Fraction(2), 60),), "4/4", Fraction(1))
+    tune = MelodyResult((MelodyNote(67, Fraction(0), Fraction(1)),), ())
+    score = score_from_sheet(replace(small_sheet(), accompaniment=backing, melody=tune))
+    assert len(score.parts) == 3
+    assert score.parts[0].recurse().notes.first().pitch.midi == 67
+    assert score.parts[0].recurse().notes.first().lyric is None

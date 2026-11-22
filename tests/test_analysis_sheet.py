@@ -38,7 +38,7 @@ def test_fractions_become_text():
 def test_save_sheet_writes_json(tmp_path):
     path = save_sheet(small_sheet(), tmp_path / "곡_분석표.json")
     data = json.loads(path.read_text(encoding="utf-8"))
-    assert set(data) == {"beats", "rhythm", "harmony", "key", "structure", "expression", "melody", "separation"}
+    assert set(data) == {"beats", "rhythm", "harmony", "key", "structure", "expression", "melody", "separation", "accompaniment"}
     assert data["key"]["keys"][0]["mode"] == "major"
 
 

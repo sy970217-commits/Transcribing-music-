@@ -41,22 +41,29 @@ def key_name_of(segment: KeySegment) -> str:
 
 
 def melody_part_of(sheet: AnalysisSheet, shift: Fraction) -> tuple[tuple[QuantizedNote, ...], tuple[str, ...]]:
-    """가사가 붙은 멜로디 음과 음절들. 가사가 하나도 없으면 멜로디 단을 만들지 않는다."""
+    """멜로디 음과 음절들. 가사가 하나도 없고 목소리도 따로 나누지 않았으면 멜로디 단을 만들지 않는다.
+
+    (섞인 소리에서 고른 멜로디는 틀리기 쉽지만, 나눈 목소리 트랙의 멜로디는 가사가 없어도 따로 적을 만하다.)
+    """
     notes = sheet.melody.notes
-    if all(n.lyric is None for n in notes):
+    no_lyrics = all(n.lyric is None for n in notes)
+    if no_lyrics and sheet.accompaniment is None:
         return (), ()
     loudness = {(n.start, n.pitch): n.velocity for n in sheet.rhythm.notes}
     melody = tuple(
         QuantizedNote(n.pitch, loudness.get((n.start, n.pitch), DEFAULT_VELOCITY), n.start + shift, n.length)
         for n in notes
     )
-    return melody, tuple(HOLD if n.lyric is None else n.lyric for n in notes)
+    lyrics = () if no_lyrics else tuple(HOLD if n.lyric is None else n.lyric for n in notes)
+    return melody, lyrics
 
 
 def score_from_sheet(sheet: AnalysisSheet, info: ScoreInfo = ScoreInfo()) -> stream.Score:
     shift = pickup_shift(sheet)
-    piano = tuple(QuantizedNote(n.pitch, n.velocity, n.start + shift, n.length) for n in sheet.rhythm.notes)
     melody, lyrics = melody_part_of(sheet, shift)
+    # 멜로디 단이 있고 목소리를 따로 나눴으면, 피아노 단에는 목소리를 뺀 반주만 적는다(멜로디가 두 번 적히지 않게)
+    backing = sheet.accompaniment if melody and sheet.accompaniment is not None else sheet.rhythm
+    piano = tuple(QuantizedNote(n.pitch, n.velocity, n.start + shift, n.length) for n in backing.notes)
     if info.key_name is None and sheet.key.keys:
         info = replace(info, key_name=key_name_of(sheet.key.keys[0]))
     if lyrics:
