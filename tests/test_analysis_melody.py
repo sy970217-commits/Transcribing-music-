@@ -27,8 +27,13 @@ def test_overlapping_melody_note_is_cut():
 
 
 def test_low_accompaniment_during_rest_is_skipped():
-    notes = [(76, 0, 1), (77, 1, 1), (79, 2, 1), (60, 3, 1), (64, 3, 1), (76, 4, 1)]
+    notes = [(76, 0, 1), (64, 0, 1), (77, 1, 1), (79, 2, F(1, 2)), (60, 3, 1), (64, 3, 1), (76, 4, 1)]
     assert [n.pitch for n in analyze_melody(rhythm(*notes)).notes] == [76, 77, 79, 76]
+
+
+def test_melody_after_rest_may_start_low_above_accompaniment():
+    notes = [(84, 0, 1), (55, 0, 1), (72, 2, 1), (55, 2, 1)]
+    assert [n.pitch for n in analyze_melody(rhythm(*notes)).notes] == [84, 72]
 
 
 def test_phrases_split_at_rest():
@@ -60,3 +65,22 @@ def test_no_notes():
 def test_cli_missing_file(capsys):
     assert main(["없는파일.wav"]) == 1
     assert "오류" in capsys.readouterr().err
+
+
+def test_phrase_ends_after_long_note():
+    result = analyze_melody(rhythm((72, 0, 1), (74, 1, 2), (76, 3, 1)))
+    assert result.phrase_starts == (0, 3)
+
+
+def test_melody_may_leap_down_without_rest():
+    assert [n.pitch for n in analyze_melody(rhythm((88, 0, 2), (72, 2, 2))).notes] == [88, 72]
+
+
+def test_far_lower_note_after_cut_melody_is_accompaniment():
+    notes = [(91, 0, F(1, 3)), (52, F(1, 2), F(1, 2)), (55, 1, F(1, 2)), (88, 2, F(1, 3))]
+    assert [n.pitch for n in analyze_melody(rhythm(*notes)).notes] == [91, 88]
+
+
+def test_far_lower_note_right_after_melody_is_accompaniment():
+    notes = [(91, 0, F(1, 2)), (52, F(1, 2), F(1, 2)), (88, 1, 1)]
+    assert [n.pitch for n in analyze_melody(rhythm(*notes)).notes] == [91, 88]

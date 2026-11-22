@@ -3,12 +3,16 @@
 멜로디 고르기(맨 위 음 따라가기)
 1. 같은 자리에서 시작한 음 중 가장 높은 음이 멜로디 후보다.
 2. 앞 멜로디 음이 아직 울리고 있는데 후보가 그보다 낮으면 반주(긴 멜로디 음 아래 분산화음 등)로 보고 건너뛴다.
-3. 멜로디가 쉬는 동안 반주만 나오면 반주 맨 위 음을 멜로디로 잘못 고를 수 있다. 그래서 쉰 뒤의 후보가
-   최근 멜로디 음들보다 REGISTER_DROP 넘게 낮으면 건너뛴다.
+3. 멜로디가 쉬는 동안 반주만 나오면 반주 맨 위 음을 멜로디로 잘못 고를 수 있다. 그래서 쉰 뒤(틈이 있을 때)의 후보가
+   바로 앞(한 마디쯤)에 나온 반주 음(멜로디로 고르지 않은 음)보다 높지 않으면 건너뛴다.
+   또 쉬었든 아니든, 한 마디 안의 앞 멜로디 음보다 MAX_DROP 넘게 낮은 후보도 건너뛴다.
+   음 인식(C단계)이 피아노의 긴 음을 짧게 끊는 일이 많아서 필요하다.
 4. 멜로디 음이 겹치면 앞 음을 다음 음 시작에서 끊는다.
 
 가사 붙이기
-- 멜로디를 쉼(한 박 이상)으로 '구절'로 나눈다.
+- 멜로디를 '구절'로 나눈다. 한 박 이상 쉬거나 두 박 이상 긴 음 뒤에서 나눈다
+  (D단계가 1박 이하 쉼표를 앞 음에 붙여 늘리므로, 짧은 쉼은 긴 음으로 보인다).
+  구절을 더 잘게 나눠도 가사는 앞 줄에 이어 붙으므로 괜찮다.
 - 가사 한 줄이 끝나면 다음 줄은 다음 구절 처음부터 붙인다. 줄이 구절보다 길면 다음 구절로 넘친다.
 - 가사 쓰는 법은 transcriber.lyrics와 같다("-"는 앞 글자 이어 부르기).
 - 음원에서 가사를 알아듣지는 않는다(말소리 인식 AI가 필요). 가사 글은 사용자가 준다.
@@ -21,13 +25,13 @@ import sys
 from dataclasses import dataclass
 from fractions import Fraction
 from pathlib import Path
-from statistics import median
 
 from transcriber.analysis.rhythm import RhythmNote, RhythmResult
 from transcriber.lyrics import HOLD, parse_lyrics
 
-REGISTER_DROP = 10  # 쉰 뒤 후보가 최근 멜로디보다 이만큼(반음 수) 넘게 낮으면 반주로 본다
-RECENT_NOTES = 4  # '최근 멜로디'로 볼 음 수
+RECENT_QUARTERS = 4  # 쉰 뒤 후보를 이만큼(4분음표 수) 앞까지 나온 음과 비교한다
+MAX_DROP = 16  # 후보가 한 마디 안의 앞 멜로디 음보다 이만큼(반음 수) 넘게 낮으면 반주로 본다
+PHRASE_END_BEATS = 2  # 이 박 수 이상 긴 음 뒤에서 구절을 나눈다
 
 
 @dataclass(frozen=True)
@@ -55,20 +59,32 @@ def top_notes(notes: tuple[RhythmNote, ...]) -> list[RhythmNote]:
     return [tops[start] for start in sorted(tops)]
 
 
-def is_accompaniment(candidate: RhythmNote, melody: list[MelodyNote]) -> bool:
+def accompaniment_ceiling(notes: tuple[RhythmNote, ...], melody: list[MelodyNote], start: Fraction) -> int | None:
+    """start 앞 RECENT_QUARTERS 안에 시작한, 멜로디가 아닌 음 중 가장 높은 음."""
+    chosen = {(n.start, n.pitch) for n in melody}
+    under = [n.pitch for n in notes
+             if start - RECENT_QUARTERS <= n.start < start and (n.start, n.pitch) not in chosen]
+    return max(under, default=None)
+
+
+def is_accompaniment(candidate: RhythmNote, melody: list[MelodyNote], notes: tuple[RhythmNote, ...]) -> bool:
     if not melody:
         return False
     last = melody[-1]
     if last.start + last.length > candidate.start:
         return candidate.pitch < last.pitch
-    recent = median(n.pitch for n in melody[-RECENT_NOTES:])
-    return candidate.pitch < recent - REGISTER_DROP
+    if candidate.start - last.start <= RECENT_QUARTERS and candidate.pitch < last.pitch - MAX_DROP:
+        return True
+    if last.start + last.length == candidate.start:
+        return False
+    ceiling = accompaniment_ceiling(notes, melody, candidate.start)
+    return ceiling is not None and candidate.pitch <= ceiling
 
 
 def pick_melody(notes: tuple[RhythmNote, ...]) -> tuple[MelodyNote, ...]:
     melody: list[MelodyNote] = []
     for candidate in top_notes(notes):
-        if is_accompaniment(candidate, melody):
+        if is_accompaniment(candidate, melody, notes):
             continue
         if melody and melody[-1].start + melody[-1].length > candidate.start:
             last = melody[-1]
@@ -77,10 +93,12 @@ def pick_melody(notes: tuple[RhythmNote, ...]) -> tuple[MelodyNote, ...]:
     return tuple(melody)
 
 
-def phrase_indexes(melody: tuple[MelodyNote, ...], rest: Fraction) -> list[int]:
-    """구절 첫 음의 번호들. 앞 음이 끝나고 rest 이상 쉬면 새 구절."""
-    return [i for i, note in enumerate(melody)
-            if i == 0 or note.start - (melody[i - 1].start + melody[i - 1].length) >= rest]
+def phrase_indexes(melody: tuple[MelodyNote, ...], beat: Fraction) -> list[int]:
+    """구절 첫 음의 번호들. 앞 음 뒤에 한 박 이상 쉬거나, 앞 음이 PHRASE_END_BEATS박 이상 길면 새 구절."""
+    def starts_phrase(i: int) -> bool:
+        before = melody[i - 1]
+        return melody[i].start - (before.start + before.length) >= beat or before.length >= PHRASE_END_BEATS * beat
+    return [i for i in range(len(melody)) if i == 0 or starts_phrase(i)]
 
 
 def place_lyrics(note_count: int, phrase_firsts: list[int], lines: list[tuple[str, ...]]) -> list[str | None]:
