@@ -21,6 +21,7 @@ chord-name = "transcriber.chord_names:main"
 separate = "transcriber.analysis.separation:main"
 beats = "transcriber.analysis.beats:main"
 notes = "transcriber.analysis.notes:main"
+rhythm = "transcriber.analysis.rhythm:main"
 
 [dependency-groups]
 dev = ["pytest>=8"]
