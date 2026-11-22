@@ -29,7 +29,7 @@ ROOT_IN_BASS_BONUS = 0.25  # 맨 아래 음이 근음이면 더한다
 EXTRA_TONE_COST = 0.1  # 음이 많은 코드(7화음)는 조금 깎아, 비기면 3화음을 고른다
 MIN_TONES = 2  # 음이름이 이보다 적게 울린 박은 판단하지 않는다(앞뒤 코드를 이어 간다)
 MIN_TONE_SHARE = 0.1  # 박 안에서 이 비율보다 짧게 울린 코드 음은 빠진 것으로 본다(꾸밈음 때문에 Am7로 착각 방지)
-UNSURE_NO_CHORD_SCORE = 0.2  # 판단하지 않는 박에서 '코드 없음'에 주는 점수(곡 처음 못갖춘마디 등)
+UNSURE_NO_CHORD_SCORE = 0.2  # 첫 코드 앞의 판단하지 않는 박에서 '코드 없음'에 주는 점수(곡 처음 못갖춘마디 등)
 # 코드를 바꿀 때 깎는 점수: 마디 첫 박 / 마디 가운데 박(4/4의 3박, 6/8처럼 2박 마디는 없음) / 그 밖
 CHANGE_COST_BAR, CHANGE_COST_HALF, CHANGE_COST_BEAT = 0.1, 0.25, 0.8
 
@@ -58,9 +58,12 @@ CANDIDATES = [(root, kind, frozenset((root + t) % PITCH_CLASSES for t in tones))
 
 
 def slot_weights(notes: tuple[RhythmNote, ...], start: Fraction, end: Fraction) -> tuple[np.ndarray, int | None]:
-    """start~end에 음이름마다 울린 시간(맨 아래 음은 더 무겁게)과 맨 아래 음이름."""
+    """start~end에 음이름마다 울린 시간(맨 아래 음은 더 무겁게)과 맨 아래 음이름.
+    박 앞에서 시작해 박의 앞쪽 절반 안에 끝나는 음은 앞 코드의 남은 울림이라 세지 않는다."""
     weights = np.zeros(PITCH_CLASSES)
-    sounding = [(n, min(end, n.start + n.length) - max(start, n.start)) for n in notes]
+    middle = (start + end) / 2
+    counted = [n for n in notes if n.start >= start or n.start + n.length > middle]
+    sounding = [(n, min(end, n.start + n.length) - max(start, n.start)) for n in counted]
     sounding = [(n, overlap) for n, overlap in sounding if overlap > 0]
     for note, overlap in sounding:
         weights[note.pitch % PITCH_CLASSES] += float(overlap)
@@ -74,7 +77,7 @@ def slot_weights(notes: tuple[RhythmNote, ...], start: Fraction, end: Fraction) 
 def slot_scores(weights: np.ndarray, bass: int | None) -> np.ndarray:
     """후보 코드마다 이 박의 점수. 마지막 칸은 코드 없음."""
     if np.count_nonzero(weights) < MIN_TONES:
-        return np.append(np.zeros(len(CANDIDATES)), UNSURE_NO_CHORD_SCORE)
+        return np.zeros(len(CANDIDATES) + 1)
     scores = np.zeros(len(CANDIDATES) + 1)
     share = weights / weights.sum()
     for i, (root, _, tones) in enumerate(CANDIDATES):
@@ -127,9 +130,11 @@ def analyze_harmony(rhythm: RhythmResult, beats: BeatAnalysis) -> HarmonyResult:
     unit = rhythm.beat_quarters
     song_end = max(n.start + n.length for n in rhythm.notes)
     count = int(np.ceil(song_end / unit))
-    rows = [slot_scores(*slot_weights(rhythm.notes, i * unit, (i + 1) * unit)) for i in range(count)]
+    rows = np.array([slot_scores(*slot_weights(rhythm.notes, i * unit, (i + 1) * unit)) for i in range(count)])
+    leading = np.argmax(rows.any(axis=1)) if rows.any() else count
+    rows[:leading, -1] = UNSURE_NO_CHORD_SCORE  # 첫 코드 앞(못갖춘마디 등)의 판단 못 하는 박은 '코드 없음'
     costs = [change_cost(i, beats.beats_per_bar, beats.pickup_beats) for i in range(count)]
-    path = best_path(np.array(rows), costs)
+    path = best_path(rows, costs)
     # 코드가 바뀌는 곳과 마디 첫 박·가운데 박에서 나눈 조각마다 맨 아래 음을 정하고, 같은 코드·같은 맨 아래 음은 다시 잇는다
     cuts = [i for i in range(count) if i == 0 or path[i] != path[i - 1] or costs[i] <= CHANGE_COST_HALF] + [count]
     pieces = [make_segment(rhythm.notes, path[a], a * unit, b * unit) for a, b in zip(cuts, cuts[1:])]

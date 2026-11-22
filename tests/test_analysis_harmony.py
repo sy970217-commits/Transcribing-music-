@@ -75,3 +75,25 @@ def test_cli_reports_missing_file(capsys):
 
 def test_two_beat_bar_is_not_split_in_half():
     assert change_cost(1, 2, 0) == change_cost(1, 3, 0)
+
+
+def offbeat_band(bass_by_beat, chords_by_bar):
+    """베이스는 박마다, 화음은 뒷박(8분음표 뒤)에 1박 길이로 누른다(앞 코드가 다음 박 절반까지 울림)."""
+    notes = [RhythmNote(p, Fraction(b), Fraction(1), 90) for b, p in bass_by_beat]
+    for bar, tones in enumerate(chords_by_bar):
+        notes += [RhythmNote(p, Fraction(bar * 4 + b) + Fraction(1, 2), Fraction(1), 70) for b in range(4) for p in tones]
+    return notes
+
+
+def test_ringing_of_the_previous_chord_is_ignored():
+    # 두 번째 마디 첫 박에 베이스를 못 찾아도, 앞 코드(Dm)의 남은 울림 때문에 코드가 틀리지 않는다
+    bass = [(b, 50) for b in range(4)] + [(b, 43) for b in range(5, 8)]
+    notes = offbeat_band(bass, [(62, 65, 69), (59, 62, 67)])
+
+    assert names(notes)[:2] == [(0, "Dm"), (4, "GM")]  # 그 뒤는 곡 끝에 남은 울림
+
+
+def test_beat_with_one_tone_inside_the_song_is_not_no_chord():
+    notes = block(48, (60, 64, 67), 0, 4) + [RhythmNote(43, Fraction(4), Fraction(2), 80)] + block(43, (59, 62, 67), 6, 2)
+
+    assert names(notes) == [(0, "CM"), (4, "GM")]
