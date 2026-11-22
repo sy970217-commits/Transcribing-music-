@@ -32,6 +32,9 @@ from transcriber.audio_io import AudioLoadError, load_audio
 
 HOP = 512
 PULSE_PRIOR_BPM = 120.0  # 맥박을 찾을 때 기대 빠르기(이 근처에서 잘 잡힘, 문제지로 확인)
+# 맥박을 찾을 때 빠르기를 얼마나 일정하게 지킬지(librosa 기본 100). 낮추면 느려지거나 빨라지는 곳을 더 잘 따라간다
+# (문제지 빠르기 변화 곡 박_정확도 0.94→0.97, 다른 곡은 그대로)
+PULSE_TIGHTNESS = 20.0
 BASS_MAX_HZ = 200.0  # 이보다 낮은 소리를 '베이스'로 본다
 COMFORT_BPM = 100.0  # 사람이 세기 편한 박 빠르기
 SOUND_START_RATIO = 0.01  # 연주 시작을 찾는 소리 크기 기준(가장 큰 소리 대비)
@@ -91,7 +94,8 @@ def _track_pulses(samples: np.ndarray, rate: int) -> np.ndarray:
     (못갖춘마디를 세려면 첫 소리의 박이 있어야 한다)."""
     envelope = librosa.onset.onset_strength(y=samples, sr=rate, hop_length=HOP)
     _, tracked = librosa.beat.beat_track(
-        onset_envelope=envelope, sr=rate, hop_length=HOP, start_bpm=PULSE_PRIOR_BPM, units="time"
+        onset_envelope=envelope, sr=rate, hop_length=HOP, start_bpm=PULSE_PRIOR_BPM,
+        tightness=PULSE_TIGHTNESS, units="time"
     )
     pulses = list(np.asarray(tracked, dtype=float))
     if len(pulses) < 2 or envelope.max() <= 0:
