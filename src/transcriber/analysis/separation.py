@@ -1,14 +1,16 @@
 """분석기 A단계: 소리 분리. 섞인 음원을 악기별 소리(트랙)로 나눈다. Demucs(소리 분리 AI)를 사용한다.
 
 나누는 트랙(모델마다 다름):
-- htdemucs (기본, 4개): vocals(목소리) · drums(드럼) · bass(베이스) · other(나머지: 피아노·기타 등)
-- htdemucs_6s (6개): 위에 guitar(기타) · piano(피아노)가 따로 나온다 (처음 쓸 때 모델을 내려받음)
+- htdemucs_6s (기본, 6개): vocals(목소리) · drums(드럼) · bass(베이스) · guitar(기타) · piano(피아노) · other(나머지)
+- htdemucs (4개): vocals · drums · bass · other(나머지: 피아노·기타 등)
+문제지 채점(tests/benchmark)에서 노래+피아노 곡의 목소리 닮음이 2.4 → 8.4dB, 피아노가 -0.5 → 7.3dB로
+htdemucs_6s가 훨씬 잘 나눠서 기본으로 쓴다.
 
 결과는 output/<곡 이름>/분리/<모델>/ 아래에 트랙마다 wav로 저장하고, 같은 곡을 다시 분석하면
 저장된 결과를 그대로 쓴다(분리는 몇 분씩 걸리므로).
 트랙마다 '들림 정도'(곡 구간 중 그 트랙 소리가 충분히 큰 구간의 비율)도 함께 적는다.
 
-실행: uv run separate 곡.wav [--model htdemucs_6s]
+실행: uv run separate 곡.wav [--model htdemucs]
 """
 
 import argparse
@@ -24,7 +26,7 @@ import numpy as np
 
 from transcriber.audio_io import AudioLoadError, load_audio, validate_audio_path
 
-DEFAULT_MODEL = "htdemucs"
+DEFAULT_MODEL = "htdemucs_6s"
 MODEL_STEMS = {
     "htdemucs": ("vocals", "drums", "bass", "other"),
     "htdemucs_ft": ("vocals", "drums", "bass", "other"),

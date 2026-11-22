@@ -5,6 +5,8 @@ import pytest
 import soundfile as sf
 
 from transcriber.analysis.separation import (
+    DEFAULT_MODEL,
+    MODEL_STEMS,
     SUMMARY_FILE,
     SeparationError,
     main,
@@ -41,7 +43,7 @@ def fake_separator(answers, calls):
         silent = np.zeros_like(next(iter(answers.values())))
         return {
             name: write(target / f"{name}.wav", answers.get(name, silent))
-            for name in ("vocals", "drums", "bass", "other")
+            for name in MODEL_STEMS[model]
         }
 
     return run
@@ -53,8 +55,8 @@ def test_stems_are_saved_with_presence(tmp_path, song):
 
     result = separate(path, tmp_path / "out", separator=fake_separator(answers, calls))
 
-    assert set(result.stems) == {"vocals", "drums", "bass", "other"}
-    assert all(p.is_file() and p.parent == tmp_path / "out" / "song" / "분리" / "htdemucs" for p in result.stems.values())
+    assert set(result.stems) == set(MODEL_STEMS[DEFAULT_MODEL])
+    assert all(p.is_file() and p.parent == tmp_path / "out" / "song" / "분리" / DEFAULT_MODEL for p in result.stems.values())
     assert result.present("other") and result.present("bass")
     assert not result.present("vocals") and not result.present("drums")
     summary = json.loads((result.stems["bass"].parent / SUMMARY_FILE).read_text(encoding="utf-8"))
@@ -68,7 +70,7 @@ def test_second_run_reuses_saved_stems(tmp_path, song):
 
     again = separate(path, tmp_path / "out", separator=fake_separator(answers, calls))
 
-    assert calls == ["htdemucs"]  # 두 번째에는 분리하지 않고 저장된 결과를 씀
+    assert calls == [DEFAULT_MODEL]  # 두 번째에는 분리하지 않고 저장된 결과를 씀
     assert again.present("bass")
 
 
@@ -79,6 +81,14 @@ def test_presence_counts_loud_windows():
     assert stem_presence(mix, mix) == 1.0
     assert stem_presence(quiet_half, mix) == pytest.approx(0.5)
     assert stem_presence(np.zeros_like(mix), mix) == 0.0
+
+
+def test_four_stem_model_can_still_be_chosen(tmp_path, song):
+    path, answers = song
+
+    result = separate(path, tmp_path, model="htdemucs", separator=fake_separator(answers, []))
+
+    assert set(result.stems) == {"vocals", "drums", "bass", "other"}
 
 
 def test_missing_stem_and_unknown_model_are_errors(tmp_path, song):

@@ -152,7 +152,7 @@ def leakage_db(estimate: np.ndarray, mix: np.ndarray) -> float:
     return float(10 * np.log10((np.mean(estimate**2) + 1e-12) / (np.mean(mix**2) + 1e-12)))
 
 
-def grade(model: str = "htdemucs") -> dict:
+def grade(model: str = "htdemucs_6s") -> dict:
     from transcriber.analysis.separation import separate
 
     report = {}
@@ -185,6 +185,6 @@ if __name__ == "__main__":
     if command == "build":
         build()
     elif command == "grade":
-        grade(sys.argv[2] if len(sys.argv) > 2 else "htdemucs")
+        grade(sys.argv[2] if len(sys.argv) > 2 else "htdemucs_6s")
     else:
         print("사용법: separation_set.py build | grade [모델]")
