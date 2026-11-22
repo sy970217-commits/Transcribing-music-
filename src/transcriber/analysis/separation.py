@@ -42,9 +42,15 @@ STEM_NAMES_KO = {
 }
 DEFAULT_OUTPUT_DIR = Path("output")
 SUMMARY_FILE = "분리정보.json"
-# 곡을 5초씩 잘라, 트랙 소리 크기가 섞인 소리의 10% 이상인 구간의 비율을 '들림 정도'로 본다
+# 곡을 5초씩 잘라, 트랙 소리가 섞인 소리 대비 기준 이상인 구간의 비율을 '들림 정도'로 본다.
+# 기준(문제지 채점으로 정함):
+# - 이름 있는 트랙(목소리·피아노·베이스·드럼·기타 등): 0.1%(-30dB). 악기가 있으면 -15dB 이상,
+#   없으면 -50dB 이하로 뚜렷이 갈린다. 드럼·베이스가 큰 곡의 작은 피아노도 '있음'으로 잡는다
+# - 6트랙 모델의 other(나머지): 16%(-8dB). 피아노·목소리에서 새어 나온 소리가 모이는 곳이라
+#   악기가 없어도 -12dB쯤 되므로 크게 들릴 때만 '있음'
 PRESENCE_WINDOW_SECONDS = 5.0
-MIN_ENERGY_RATIO = 0.1
+MIN_ENERGY_RATIO = 0.001
+RESIDUAL_MIN_ENERGY_RATIO = 0.16
 PRESENT_SHARE = 0.2  # 들림 정도가 이 이상이면 '이 악기가 있다'
 # 곡 평균 소리의 1%도 안 되는 거의 조용한 구간(곡 끝 잔향 등)은 세지 않는다.
 # 그런 구간에서는 아주 작은 새어 나온 소리도 '섞인 소리의 10% 이상'이 되어 악기가 있다고 잘못 판단한다
@@ -99,12 +105,24 @@ def separate(
 def _with_presence(source: Path, model: str, stems: dict[str, Path]) -> Separation:
     """트랙마다 들림 정도를 계산한다(저장된 분리 결과에도 매번 새로 계산해 판단 기준이 바뀌어도 맞게)."""
     mix = _mono(source)
-    presence = {name: round(stem_presence(_mono(path), mix), 3) for name, path in stems.items()}
+    presence = {
+        name: round(stem_presence(_mono(path), mix, min_ratio=presence_ratio(name, model)), 3)
+        for name, path in stems.items()
+    }
     return Separation(source=source, model=model, stems=stems, presence=presence)
 
 
-def stem_presence(stem: np.ndarray, mix: np.ndarray, sample_rate: int = 22050) -> float:
-    """곡 구간 중 트랙 소리가 섞인 소리의 MIN_ENERGY_RATIO 이상인 구간의 비율(0~1)."""
+def presence_ratio(name: str, model: str) -> float:
+    """트랙마다 '들린다'고 볼 기준. 피아노 트랙이 따로 있는 모델의 other는 새어 나온 소리 모음이라 엄격하게."""
+    if name == "other" and "piano" in MODEL_STEMS.get(model, ()):
+        return RESIDUAL_MIN_ENERGY_RATIO
+    return MIN_ENERGY_RATIO
+
+
+def stem_presence(
+    stem: np.ndarray, mix: np.ndarray, sample_rate: int = 22050, min_ratio: float = MIN_ENERGY_RATIO
+) -> float:
+    """곡 구간 중 트랙 소리가 섞인 소리의 min_ratio 이상인 구간의 비율(0~1)."""
     window = int(PRESENCE_WINDOW_SECONDS * sample_rate)
     length = min(len(stem), len(mix))
     silent = SILENT_RATIO * _energy(mix[:length])
@@ -114,7 +132,7 @@ def stem_presence(stem: np.ndarray, mix: np.ndarray, sample_rate: int = 22050) -
         if mix_energy <= silent or mix_energy <= 0:
             continue
         checked += 1
-        loud += _energy(stem[start : start + window]) >= MIN_ENERGY_RATIO * mix_energy
+        loud += _energy(stem[start : start + window]) >= min_ratio * mix_energy
     return loud / checked if checked else 0.0
 
 

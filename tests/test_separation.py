@@ -11,6 +11,7 @@ from transcriber.analysis.separation import (
     SeparationError,
     main,
     separate,
+    presence_ratio,
     stem_presence,
 )
 
@@ -111,3 +112,20 @@ def test_near_silent_windows_are_ignored():
     leak = np.concatenate([np.zeros(RATE * 15, dtype=np.float32), tone(60, seconds=15, level=0.0005)])
 
     assert stem_presence(leak, mix) == 0.0
+
+
+def test_quiet_instrument_under_loud_band_still_counts():
+    # 드럼·베이스가 커서 피아노가 섞인 소리의 4%(-14dB)뿐이어도 '들림'
+    mix = tone(110, seconds=20)
+    quiet_piano = tone(440, seconds=20, level=0.1)
+
+    assert stem_presence(quiet_piano, mix) == 1.0
+
+
+def test_six_stem_other_needs_to_be_clearly_loud():
+    mix = tone(440, seconds=20)
+    leaked = tone(440, seconds=20, level=0.12)  # 섞인 소리(0.5)의 6%(-12dB): 피아노에서 새어 나온 정도
+
+    strict = presence_ratio("other", "htdemucs_6s")
+    assert stem_presence(leaked, mix, min_ratio=strict) == 0.0
+    assert presence_ratio("other", "htdemucs") == presence_ratio("piano", "htdemucs_6s")  # 4트랙 모델의 other는 피아노 자리
