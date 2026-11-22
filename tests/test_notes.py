@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 
 import transcriber.analysis.notes as notes_module
-from transcriber.analysis.notes import MIX, MIX_SETTINGS, TRACK_SETTINGS, clean_track, main, recognize_notes, to_monophonic
+from transcriber.analysis.notes import MIX, MIX_SETTINGS, TRACK_SETTINGS, clean_track, main, merge_tracks, recognize_notes, to_monophonic
 from transcriber.analysis.separation import Separation
 from transcriber.pitch import Note, PitchResult
 
@@ -86,3 +86,8 @@ def test_cuts_previous_note_when_next_starts():
     melody = to_monophonic((n(60, 0.0, 2.0), n(62, 1.0, 2.0)))
 
     assert [(x.pitch, x.end_seconds) for x in melody] == [(60, 1.0), (62, 2.0)]
+
+
+def test_merge_tracks_joins_all_tracks_in_start_order():
+    found = {"vocals": (n(64, 1.0, 2.0),), "piano": (n(48, 0.0, 1.0), n(60, 1.0, 2.0))}
+    assert [x.pitch for x in merge_tracks(found)] == [48, 60, 64]

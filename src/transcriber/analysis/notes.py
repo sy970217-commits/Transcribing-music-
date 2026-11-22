@@ -78,6 +78,11 @@ def recognize_notes(audio_path: str | Path, separation: Separation | None = None
     return found
 
 
+def merge_tracks(found: dict[str, tuple[Note, ...]]) -> tuple[Note, ...]:
+    """트랙마다 찾은 음을 한 목록으로 합친다(시작 순). 피아노 악보는 모든 악기 음을 함께 적는다."""
+    return tuple(sorted((n for notes in found.values() for n in notes), key=lambda n: (n.start_seconds, n.pitch)))
+
+
 def _detect(path: str | Path, track: str) -> tuple[Note, ...]:
     settings = MIX_SETTINGS if track == MIX else TRACK_SETTINGS.get(track, DEFAULT_SETTINGS)
     onset, frame, shortest, melodia = settings

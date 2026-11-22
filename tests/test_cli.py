@@ -3,6 +3,7 @@ import pytest
 import soundfile as sf
 from music21 import converter
 
+import transcriber.cli as cli_module
 from transcriber.cli import EXIT_ERROR, EXIT_OK, main, transcribe_file
 
 SAMPLE_RATE = 22050
@@ -192,3 +193,18 @@ def test_main_rejects_negative_tempo(melody_wav, tmp_path, capsys):
 
     assert exit_code == EXIT_ERROR
     assert "템포" in capsys.readouterr().err
+
+
+def test_separate_flag_passes_separation_to_analysis(tmp_path, monkeypatch):
+    audio = tmp_path / "song.wav"
+    sf.write(audio, np.zeros(22050), 22050)
+    seen = {}
+    monkeypatch.setattr(cli_module, "separate", lambda source, target: "분리결과")
+
+    def fake_analyze(source, lyrics_text, separation):
+        seen["separation"] = separation
+        raise ValueError("여기서 멈춤")
+
+    monkeypatch.setattr(cli_module, "analyze_song", fake_analyze)
+    assert main([str(audio), "--separate", "--output-dir", str(tmp_path)]) == EXIT_ERROR
+    assert seen["separation"] == "분리결과"

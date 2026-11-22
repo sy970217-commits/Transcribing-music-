@@ -1,5 +1,6 @@
 import json
 from fractions import Fraction
+from pathlib import Path
 
 from transcriber.analysis.beats import BeatAnalysis
 from transcriber.analysis.expression import DynamicSpan, ExpressionResult, PedalSpan
@@ -37,10 +38,14 @@ def test_fractions_become_text():
 def test_save_sheet_writes_json(tmp_path):
     path = save_sheet(small_sheet(), tmp_path / "곡_분석표.json")
     data = json.loads(path.read_text(encoding="utf-8"))
-    assert set(data) == {"beats", "rhythm", "harmony", "key", "structure", "expression", "melody"}
+    assert set(data) == {"beats", "rhythm", "harmony", "key", "structure", "expression", "melody", "separation"}
     assert data["key"]["keys"][0]["mode"] == "major"
 
 
 def test_cli_missing_file(capsys):
     assert main(["없는파일.wav"]) == 1
     assert "오류" in capsys.readouterr().err
+
+
+def test_paths_become_text():
+    assert to_plain({"vocals": Path("a/vocals.wav")}) == {"vocals": "a/vocals.wav"}

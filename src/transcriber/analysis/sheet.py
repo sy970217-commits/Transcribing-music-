@@ -8,11 +8,13 @@
 - structure: 곡 구조(G)
 - expression: 셈여림·페달(H)
 - melody: 멜로디 음·가사·구절(I)
-A단계(소리 분리)는 아직 넣지 않았다. 지금은 섞인 소리 전체(mix)에서 음을 찾는다.
+- separation: 소리 분리 결과(A). --separate를 줄 때만 한다(몇 분 걸림)
+  - 나누면 트랙마다 음을 찾아 합치고, 목소리 트랙이 있으면 멜로디는 목소리 트랙에서 찾는다.
+  - 안 나누면 섞인 소리 전체(mix)에서 음을 찾는다.
 
 분석표는 JSON 파일로도 저장해서, 악보가 이상할 때 어느 단계가 틀렸는지 찾기 쉽게 한다.
 
-실행: uv run analyze 곡.wav [--lyrics 가사.txt] [--output 폴더]
+실행: uv run analyze 곡.wav [--lyrics 가사.txt] [--output 폴더] [--separate]
 """
 
 import argparse
@@ -28,6 +30,7 @@ from transcriber.analysis.expression import ExpressionResult
 from transcriber.analysis.harmony import HarmonyResult
 from transcriber.analysis.melody import MelodyResult
 from transcriber.analysis.rhythm import RhythmResult
+from transcriber.analysis.separation import Separation
 from transcriber.analysis.structure import StructureResult
 from transcriber.analysis.tonality import KeyResult
 
@@ -43,22 +46,28 @@ class AnalysisSheet:
     structure: StructureResult
     expression: ExpressionResult
     melody: MelodyResult
+    separation: Separation | None = None
 
 
-def analyze_song(audio_path: str | Path, lyrics_text: str | None = None) -> AnalysisSheet:
-    """음원 → 분석표. 단계 순서대로 앞 단계 결과를 다음 단계에 넘긴다."""
+def analyze_song(
+    audio_path: str | Path, lyrics_text: str | None = None, separation: Separation | None = None
+) -> AnalysisSheet:
+    """음원 → 분석표. 단계 순서대로 앞 단계 결과를 다음 단계에 넘긴다. separation은 A단계 결과(없으면 섞인 소리)."""
     from transcriber.analysis.beats import analyze_beats
     from transcriber.analysis.expression import analyze_expression, measure_sounds
     from transcriber.analysis.harmony import analyze_harmony
     from transcriber.analysis.melody import analyze_melody
-    from transcriber.analysis.notes import recognize_notes
+    from transcriber.analysis.notes import merge_tracks, recognize_notes
     from transcriber.analysis.rhythm import quantize_notes
     from transcriber.analysis.structure import analyze_structure
     from transcriber.analysis.tonality import analyze_key
 
     beats = analyze_beats(audio_path)
-    notes = recognize_notes(Path(audio_path))["mix"]
+    found = recognize_notes(Path(audio_path), separation)
+    notes = merge_tracks(found)
     rhythm = quantize_notes(notes, beats)
+    vocals = found.get("vocals")
+    melody_source = quantize_notes(vocals, beats) if vocals else rhythm
     harmony = analyze_harmony(rhythm, beats)
     sounds = measure_sounds(audio_path, notes, beats)
     return AnalysisSheet(
@@ -68,7 +77,8 @@ def analyze_song(audio_path: str | Path, lyrics_text: str | None = None) -> Anal
         key=analyze_key(rhythm, harmony, beats),
         structure=analyze_structure(rhythm, beats),
         expression=analyze_expression(rhythm, harmony, beats, sounds),
-        melody=analyze_melody(rhythm, lyrics_text),
+        melody=analyze_melody(melody_source, lyrics_text),
+        separation=separation,
     )
 
 
@@ -76,7 +86,7 @@ def to_plain(value):
     """분석표를 JSON으로 적을 수 있는 값(dict·list·str·수)으로 바꾼다. 분수는 "3/2" 같은 글자로."""
     if dataclasses.is_dataclass(value):
         return {f.name: to_plain(getattr(value, f.name)) for f in dataclasses.fields(value)}
-    if isinstance(value, Fraction):
+    if isinstance(value, (Fraction, Path)):
         return str(value)
     if isinstance(value, (tuple, list)):
         return [to_plain(item) for item in value]
@@ -94,6 +104,7 @@ def save_sheet(sheet: AnalysisSheet, path: str | Path) -> Path:
 
 def main(argv: list[str] | None = None) -> int:
     from transcriber.analysis.rhythm import RhythmError
+    from transcriber.analysis.separation import SeparationError, separate
     from transcriber.audio_io import AudioLoadError
     from transcriber.lyrics import LyricsError, read_lyrics_file
     from transcriber.pitch import PitchDetectionError
@@ -102,14 +113,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("audio", help="음원 파일")
     parser.add_argument("--lyrics", help="가사 글 파일(UTF-8). 한 줄이 한 구절")
     parser.add_argument("--output", default=str(DEFAULT_OUTPUT_DIR), help="분석표를 저장할 폴더")
+    parser.add_argument("--separate", action="store_true", help="먼저 악기별로 소리를 나누기(A단계, 몇 분 걸림)")
     args = parser.parse_args(argv)
     try:
         text = None
         if args.lyrics:
             read_lyrics_file(args.lyrics)  # 없는 파일·빈 파일이면 여기서 오류
             text = Path(args.lyrics).read_text(encoding="utf-8")
-        sheet = analyze_song(args.audio, text)
-    except (AudioLoadError, PitchDetectionError, RhythmError, LyricsError, ValueError) as error:
+        separation = separate(args.audio, args.output) if args.separate else None
+        sheet = analyze_song(args.audio, text, separation)
+    except (AudioLoadError, SeparationError, PitchDetectionError, RhythmError, LyricsError, ValueError) as error:
         print(f"오류: {error}", file=sys.stderr)
         return 1
     path = save_sheet(sheet, Path(args.output) / f"{Path(args.audio).stem}_분석표.json")
