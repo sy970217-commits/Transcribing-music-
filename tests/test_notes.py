@@ -107,3 +107,18 @@ def test_real_leaps_and_piano_notes_are_kept():
 
     assert [x.pitch for x in clean_track("vocals", leap)] == [67, 60, 67]
     assert [x.pitch for x in clean_track("piano", spike)] == [70, 84, 69]
+
+
+def test_voice_note_split_without_gap_is_joined():
+    line = (n(65, 0, 0.5), n(65, 0.5, 1.2), n(67, 1.2, 2), n(67, 2.1, 3))
+
+    voice = clean_track("vocals", line)
+
+    # 틈 없이 쪼개진 같은 음은 한 음으로, 쉬었다가 다시 부른 같은 음은 그대로 둔다
+    assert [(x.pitch, x.start_seconds, x.end_seconds) for x in voice] == [(65, 0, 1.2), (67, 1.2, 2), (67, 2.1, 3)]
+
+
+def test_piano_repeated_notes_are_not_joined():
+    line = (n(65, 0, 0.5), n(65, 0.5, 1.0))
+
+    assert len(clean_track("piano", line)) == 2

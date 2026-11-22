@@ -5,6 +5,7 @@
   드럼은 음높이가 없어 빼고, '없다'고 판단된 트랙도 뺀다.
   - 트랙마다 악기 음역 밖의 음은 버린다(새어 들어온 소리·배음 오인식 줄이기).
   - 목소리·베이스는 한 번에 한 음만 내므로 겹친 음 중 하나만 남긴다.
+  - 목소리에서 틈 없이 쪼개진 같은 높이 음은 한 음으로 합친다(길게 부른 음이 여러 음으로 적히지 않게).
   - 목소리에서 앞뒤 음보다 크게 튄 음은 옥타브를 잘못 들은 것으로 보고 한 옥타브 옮긴다.
 음 찾기는 Spotify Basic Pitch(transcriber.pitch)를 쓴다.
 
@@ -30,6 +31,8 @@ TRACK_RANGES = {
 }
 MONOPHONIC_TRACKS = frozenset({"vocals", "bass"})
 OCTAVE_FIX_TRACKS = frozenset({"vocals"})
+JOIN_TRACKS = frozenset({"vocals"})
+SPLIT_GAP_SECONDS = 0.02  # 같은 높이 음 사이 틈이 이보다 짧으면 길게 부른 한 음이 쪼개진 것으로 본다
 OCTAVE = 12
 # 앞뒤 음 모두보다 높거나(낮거나), 한쪽과는 SPIKE_BIG, 다른 쪽과는 SPIKE_SMALL 반음 이상 떨어지면 튄 음으로 본다
 # (5도 뛰었다 돌아오는 7·7은 진짜 선율일 수 있어 그대로 둔다)
@@ -72,6 +75,21 @@ def to_monophonic(notes: tuple[Note, ...]) -> tuple[Note, ...]:
             )
         melody.append(current)
     return tuple(melody)
+
+
+def join_split_notes(notes: tuple[Note, ...]) -> tuple[Note, ...]:
+    """한 줄 선율에서 틈 없이 이어진 같은 높이 음을 한 음으로 합친다.
+
+    음 찾기 AI는 길게 부른 음을 중간에 끊어 같은 음 두세 개로 적는 일이 많다. 쉬었다가 다시 부른 음은 그대로 둔다.
+    """
+    joined: list[Note] = []
+    for current in notes:
+        previous = joined[-1] if joined else None
+        if previous and previous.pitch == current.pitch and current.start_seconds - previous.end_seconds < SPLIT_GAP_SECONDS:
+            joined[-1] = replace(previous, end_seconds=max(previous.end_seconds, current.end_seconds))
+            continue
+        joined.append(current)
+    return tuple(joined)
 
 
 def fix_octave_jumps(notes: tuple[Note, ...]) -> tuple[Note, ...]:
@@ -118,10 +136,11 @@ def _detect(path: str | Path, track: str) -> tuple[Note, ...]:
 
 
 def clean_track(track: str, notes: tuple[Note, ...]) -> tuple[Note, ...]:
-    """악기 음역 밖의 음을 버리고, 한 음씩 내는 악기는 겹친 음을 하나로 줄인다."""
+    """악기 음역 밖의 음을 버리고, 한 음씩 내는 악기는 겹친 음을 하나로 줄인다. 목소리는 쪼개진 음을 합치고 튄 음을 바로잡는다."""
     low, high = TRACK_RANGES.get(track, (0, 127))
     kept = tuple(n for n in notes if low <= n.pitch <= high)
     line = to_monophonic(kept) if track in MONOPHONIC_TRACKS else kept
+    line = join_split_notes(line) if track in JOIN_TRACKS else line
     return fix_octave_jumps(line) if track in OCTAVE_FIX_TRACKS else line
 
 
