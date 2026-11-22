@@ -7,6 +7,7 @@ from transcriber.cli import EXIT_ERROR, EXIT_OK, main, transcribe_file
 
 SAMPLE_RATE = 22050
 A4_MIDI, C5_MIDI = 69, 72
+TUNE = [69, 72, 74, 76, 72, 69, 72, 74]  # 4초: 박을 찾을 만큼 길게
 
 
 def write_melody_wav(path, midi_numbers, seconds_each=0.5):
@@ -18,16 +19,17 @@ def write_melody_wav(path, midi_numbers, seconds_each=0.5):
 
 @pytest.fixture(scope="module")
 def melody_wav(tmp_path_factory):
-    return write_melody_wav(tmp_path_factory.mktemp("audio") / "melody.wav", [A4_MIDI, C5_MIDI])
+    return write_melody_wav(tmp_path_factory.mktemp("audio") / "melody.wav", TUNE)
 
 
-def test_creates_sheet_music_and_midi(melody_wav, tmp_path):
+def test_audio_becomes_sheet_and_score(melody_wav, tmp_path):
     result = transcribe_file(melody_wav, tmp_path, tempo_bpm=120)
 
     assert result.musicxml_path == tmp_path / "melody.musicxml"
-    assert result.midi_path.exists()
-    pitches = [p.midi for n in converter.parse(str(result.musicxml_path)).recurse().notes for p in n.pitches]
-    assert pitches == [A4_MIDI, C5_MIDI]
+    assert result.sheet_path == tmp_path / "melody_분석표.json"
+    assert result.sheet_path.exists() and result.midi_path is None
+    pitches = {p.midi for n in converter.parse(str(result.musicxml_path)).recurse().notes for p in n.pitches}
+    assert pitches and pitches <= set(TUNE)
 
 
 def test_uses_given_tempo(melody_wav, tmp_path):
@@ -150,15 +152,17 @@ def test_main_warns_about_left_over_lyrics(tmp_path, capsys):
     assert "가사 3자가 남았어요" in capsys.readouterr().out
 
 
-def test_main_rejects_lyrics_without_melody(melody_wav, tmp_path, capsys):
+def test_main_puts_lyrics_on_audio_melody(melody_wav, tmp_path, capsys):
     lyrics = tmp_path / "가사.txt"
     lyrics.write_text("가을", encoding="utf-8")
 
-    args = [str(melody_wav), "--output-dir", str(tmp_path), "--tempo", "120", "--lyrics", str(lyrics)]
+    args = [str(melody_wav), "--output-dir", str(tmp_path), "--lyrics", str(lyrics)]
     exit_code = main(args)
 
-    assert exit_code == EXIT_ERROR
-    assert "멜로디 단이 필요" in capsys.readouterr().err
+    xml = (tmp_path / "melody.musicxml").read_text(encoding="utf-8")
+    assert exit_code == EXIT_OK
+    assert "<text>가</text>" in xml and "<text>을</text>" in xml
+    assert "음절 2개 → 멜로디 음표 2개" in capsys.readouterr().out
 
 
 def test_main_uses_given_time_signature(melody_wav, tmp_path):

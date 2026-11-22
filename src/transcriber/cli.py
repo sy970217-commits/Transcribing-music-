@@ -1,6 +1,9 @@
 """명령어 하나로 음원을 악보로 바꾸는 실행 파일.
 
-사용법: uv run transcribe 노래.mp3 [--tempo 90] [--output-dir output]
+사용법: uv run transcribe 노래.mp3 [--lyrics 가사.txt] [--output-dir output]
+
+음원은 분석표 방식으로 바꾼다: 음원 → 분석표(B~I단계, JSON으로도 저장) → 악보.
+--vocals를 쓰면 아직 예전 방식(목소리 분리 → 음 찾기 → 박자 정리)을 쓴다. 분석기 A단계를 붙이면 바꾼다.
 """
 
 import argparse
@@ -8,12 +11,14 @@ import sys
 from dataclasses import dataclass, replace
 from pathlib import Path
 
+from transcriber.analysis.sheet import analyze_song, save_sheet
 from transcriber.audio_io import AudioLoadError, validate_audio_path
 from transcriber.midi_input import MidiLoadError, is_midi_file, read_midi
 from transcriber.pitch import Note, PitchDetectionError, detect_notes, save_midi
 from transcriber.lyrics import LyricsError, read_lyrics_file
 from transcriber.rhythm import MIDDLE_C, QuantizedNote, estimate_tempo, quantize_notes
 from transcriber.score import ScoreInfo, build_score, key_name_of, save_musicxml
+from transcriber.sheet_score import score_from_sheet
 from transcriber.vocal_melody import extract_vocal_parts
 
 DEFAULT_OUTPUT_DIR = Path("output")
@@ -26,13 +31,14 @@ class TranscriptionResult:
     """변환 결과 요약."""
 
     musicxml_path: Path
-    midi_path: Path | None  # MIDI 파일을 넣었을 때는 새로 만들지 않음
+    midi_path: Path | None  # MIDI 파일을 넣었거나 분석표 방식이면 새로 만들지 않음
     tempo_bpm: float
     note_count: int
     key_name: str
     voice_found: bool | None = None  # --vocals를 쓴 경우에만 True/False
     melody_note_count: int = 0
     lyrics_left_over: int = 0  # 멜로디 음표보다 가사 음절이 많아 남은 수
+    sheet_path: Path | None = None  # 분석표 방식일 때 저장한 분석표(JSON)
 
 
 def transcribe_file(
@@ -41,8 +47,12 @@ def transcribe_file(
     tempo_bpm: float | None = None,
     info: ScoreInfo = ScoreInfo(),
     vocals: bool = False,
+    lyrics_text: str | None = None,
 ) -> TranscriptionResult:
-    """음원 또는 MIDI 파일을 악보로 바꾼다. vocals=True면 노래 멜로디 단을 따로 만든다."""
+    """음원 또는 MIDI 파일을 악보로 바꾼다. vocals=True면 노래 멜로디 단을 따로 만든다.
+
+    lyrics_text는 가사 글 원문(줄 = 구절). 분석표 방식은 이것을 보고 구절마다 가사를 붙인다.
+    """
     if tempo_bpm is not None and tempo_bpm <= 0:
         raise ValueError(f"템포는 0보다 커야 합니다: {tempo_bpm}")
 
@@ -50,8 +60,10 @@ def transcribe_file(
     score_info = info if info.title else replace(info, title=source.stem)
     if is_midi_file(source):
         result = _transcribe_midi(source, Path(output_dir), tempo_bpm, score_info)
-    else:
+    elif vocals:
         result = _transcribe_audio(source, Path(output_dir), tempo_bpm, score_info, vocals)
+    else:
+        return _transcribe_with_sheet(source, Path(output_dir), tempo_bpm, score_info, lyrics_text)
     return _with_lyrics_summary(result, score_info)
 
 
@@ -92,6 +104,32 @@ def _transcribe_midi(
         note_count=len(song.accompaniment) + len(song.melody),
         key_name=key_name_of(score),
         melody_note_count=_melody_note_count(song.melody),
+    )
+
+
+def _transcribe_with_sheet(
+    source: Path, target_dir: Path, tempo_bpm: float | None, info: ScoreInfo, lyrics_text: str | None
+) -> TranscriptionResult:
+    """음원 → 분석표(JSON 저장) → 악보. --tempo는 악보에 적는 빠르기만 바꾼다(박 위치는 음원에서 찾음)."""
+    validate_audio_path(source)
+    sheet = analyze_song(source, lyrics_text)
+    if not sheet.rhythm.notes:
+        raise ValueError(f"음원에서 음을 찾지 못했습니다: {source}")
+    if tempo_bpm is not None:
+        sheet = replace(sheet, beats=replace(sheet.beats, tempo_bpm=tempo_bpm / float(sheet.rhythm.beat_quarters)))
+    sheet_path = save_sheet(sheet, target_dir / f"{source.stem}_분석표.json")
+    score = score_from_sheet(sheet, info)
+    musicxml_path = save_musicxml(score, target_dir / f"{source.stem}.musicxml", info.measures_per_line)
+    sung = [n for n in sheet.melody.notes if n.lyric is not None]
+    return TranscriptionResult(
+        musicxml_path=musicxml_path,
+        midi_path=None,
+        tempo_bpm=sheet.beats.tempo_bpm * float(sheet.rhythm.beat_quarters),
+        note_count=len(sheet.rhythm.notes),
+        key_name=key_name_of(score),
+        melody_note_count=len(sung),
+        lyrics_left_over=max(0, len(info.lyrics) - len(sung)),
+        sheet_path=sheet_path,
     )
 
 
@@ -146,7 +184,7 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         "--tempo",
         type=float,
         default=None,
-        help="템포(BPM)를 직접 지정. 지정하지 않으면 자동으로 찾음",
+        help="템포(BPM)를 직접 지정. 지정하지 않으면 자동으로 찾음 (음원은 악보에 적는 빠르기만 바뀜)",
     )
     parser.add_argument("--title", default="", help="악보 제목 (기본: 파일 이름)")
     parser.add_argument("--composer", default="", help="작곡가 이름")
@@ -193,7 +231,8 @@ def main(argv: list[str] | None = None) -> int:
             time_signature=args.time_signature,
             measures_per_line=args.measures_per_line,
         )
-        result = transcribe_file(args.audio, args.output_dir, args.tempo, info, args.vocals)
+        lyrics_text = Path(args.lyrics).read_text(encoding="utf-8") if args.lyrics else None
+        result = transcribe_file(args.audio, args.output_dir, args.tempo, info, args.vocals, lyrics_text)
     except (AudioLoadError, MidiLoadError, LyricsError, PitchDetectionError, ValueError) as error:
         print(f"오류: {error}", file=sys.stderr)
         return EXIT_ERROR
@@ -215,6 +254,8 @@ def main(argv: list[str] | None = None) -> int:
     print(f"  악보: {result.musicxml_path}")
     if result.midi_path is not None:
         print(f"  MIDI: {result.midi_path}")
+    if result.sheet_path is not None:
+        print(f"  분석표: {result.sheet_path}")
     return EXIT_OK
 
 
