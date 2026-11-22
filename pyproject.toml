@@ -27,6 +27,7 @@ key = "transcriber.analysis.tonality:main"
 structure = "transcriber.analysis.structure:main"
 expression = "transcriber.analysis.expression:main"
 melody = "transcriber.analysis.melody:main"
+analyze = "transcriber.analysis.sheet:main"
 
 [dependency-groups]
 dev = ["pytest>=8"]
