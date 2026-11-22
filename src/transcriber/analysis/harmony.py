@@ -59,10 +59,12 @@ CANDIDATES = [(root, kind, frozenset((root + t) % PITCH_CLASSES for t in tones))
 
 def slot_weights(notes: tuple[RhythmNote, ...], start: Fraction, end: Fraction) -> tuple[np.ndarray, int | None]:
     """start~end에 음이름마다 울린 시간(맨 아래 음은 더 무겁게)과 맨 아래 음이름.
-    박 앞에서 시작해 박의 앞쪽 절반 안에 끝나는 음은 앞 코드의 남은 울림이라 세지 않는다."""
+    박 앞에서 시작해 박의 앞쪽 절반 안에 끝나는 음이 둘 이상이면 앞 코드의 남은 울림이라 세지 않는다.
+    하나뿐이면 선율 음일 수 있어 센다(예: 앞 꾸밈음과 같은 높이라 반 박 일찍 잡힌 선율)."""
     weights = np.zeros(PITCH_CLASSES)
     middle = (start + end) / 2
-    counted = [n for n in notes if n.start >= start or n.start + n.length > middle]
+    ringing = {n for n in notes if n.start < start and start < n.start + n.length <= middle}
+    counted = notes if len(ringing) < MIN_TONES else [n for n in notes if n not in ringing]
     sounding = [(n, min(end, n.start + n.length) - max(start, n.start)) for n in counted]
     sounding = [(n, overlap) for n, overlap in sounding if overlap > 0]
     for note, overlap in sounding:

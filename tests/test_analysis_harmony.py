@@ -97,3 +97,11 @@ def test_beat_with_one_tone_inside_the_song_is_not_no_chord():
     notes = block(48, (60, 64, 67), 0, 4) + [RhythmNote(43, Fraction(4), Fraction(2), 80)] + block(43, (59, 62, 67), 6, 2)
 
     assert names(notes) == [(0, "CM"), (4, "GM")]
+
+
+def test_single_early_melody_note_is_not_treated_as_ringing():
+    # Bm7b5의 라(A)가 앞 꾸밈음과 이어져 반 박 일찍 잡혀도, 혼자 남은 음은 빼지 않는다
+    notes = (block(48, (60, 63, 67), 0, 2) + [RhythmNote(81, Fraction(3, 2), Fraction(1), 70)]
+             + block(47, (62, 65), 2, 2) + [RhythmNote(81, Fraction(3), Fraction(1, 2), 70)])
+
+    assert names(notes) == [(0, "Cm"), (2, "Bm7b5")]
