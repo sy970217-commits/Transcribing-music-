@@ -97,3 +97,13 @@ def test_no_notes_gives_empty_result():
 def test_cli_reports_bad_file(capsys):
     assert main(["없는파일.wav"]) == 1
     assert "오류" in capsys.readouterr().err
+
+
+def test_extra_beat_only_affects_its_own_bar():
+    # 두 번째 마디(2.0~4.0초)에서 박을 하나 더 찾음(5개). 세 번째 마디 첫 박은 그대로 8번째 박이어야 한다
+    times = [0.0, 0.5, 1.0, 1.5, 2.0, 2.4, 2.8, 3.2, 3.6, 4.0, 4.5, 5.0, 5.5]
+    beats = beats_at(times, downbeats=[0.0, 2.0, 4.0])
+
+    starts = [x.start for x in quantize_notes((n(60, 4.0, 4.4), n(62, 5.0, 5.4)), beats).notes]
+
+    assert starts == [8, 10]

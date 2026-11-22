@@ -60,14 +60,31 @@ def beat_quarters_of(beats: BeatAnalysis) -> Fraction:
     return Fraction(4, int(beats.time_signature.split("/")[1]))
 
 
-def beat_number(times: np.ndarray, beat_times: np.ndarray) -> np.ndarray:
-    """초 → 몇 번째 박인지(소수). 첫 박 앞·마지막 박 뒤는 가장 가까운 박 간격으로 늘린다."""
-    index = np.arange(len(beat_times), dtype=float)
+def beat_number(times: np.ndarray, beat_times: np.ndarray, numbers: np.ndarray | None = None) -> np.ndarray:
+    """초 → 몇 번째 박인지(소수). numbers는 찾은 박마다의 박 번호(없으면 0, 1, 2…).
+    첫 박 앞·마지막 박 뒤는 가장 가까운 박 간격으로 늘린다."""
+    index = np.arange(len(beat_times), dtype=float) if numbers is None else numbers
     inside = np.interp(times, beat_times, index)
-    first_gap, last_gap = beat_times[1] - beat_times[0], beat_times[-1] - beat_times[-2]
-    before = (times - beat_times[0]) / first_gap
-    after = index[-1] + (times - beat_times[-1]) / last_gap
+    first_rate = (index[1] - index[0]) / (beat_times[1] - beat_times[0])
+    last_rate = (index[-1] - index[-2]) / (beat_times[-1] - beat_times[-2])
+    before = index[0] + (times - beat_times[0]) * first_rate
+    after = index[-1] + (times - beat_times[-1]) * last_rate
     return np.where(times < beat_times[0], before, np.where(times > beat_times[-1], after, inside))
+
+
+def counted_beats(beats: BeatAnalysis, beat_times: np.ndarray) -> np.ndarray:
+    """찾은 박마다 '곡 첫 박부터 몇 번째 박인지'. 마디 첫 박마다 번호를 다시 맞춘다.
+    빠르기가 바뀌는 곳에서 박을 하나 더(덜) 찾아도 그 마디 안에서만 틀리고, 다음 마디부터는 바로잡힌다."""
+    if not beats.downbeats:
+        return np.arange(len(beat_times), dtype=float)
+    bars = sorted({int(np.argmin(np.abs(beat_times - t))) for t in beats.downbeats})
+    per_bar, first = beats.beats_per_bar, beats.pickup_beats
+    numbers = np.arange(len(beat_times), dtype=float) - bars[0] + first  # 첫 마디 앞(못갖춘마디)
+    for k, (bar, next_bar) in enumerate(zip(bars, bars[1:])):
+        count = next_bar - bar  # 이 마디에서 찾은 박 수(보통 per_bar)
+        numbers[bar:next_bar] = first + k * per_bar + np.arange(count) * per_bar / count
+    numbers[bars[-1]:] = first + (len(bars) - 1) * per_bar + np.arange(len(beat_times) - bars[-1])
+    return numbers
 
 
 def choose_division(offsets: list[float], divisions: tuple[int, ...]) -> int:
@@ -101,14 +118,14 @@ def quantize_notes(notes: tuple[Note, ...], beats: BeatAnalysis) -> RhythmResult
         raise RhythmError("박이 2개보다 적어 리듬을 정리할 수 없어요")
     unit = beat_quarters_of(beats)
     divisions = COMPOUND_DIVISIONS if beats.pulses_per_beat == 3 else SIMPLE_DIVISIONS
-    origin = _origin_beat(beats, beat_times)
+    numbers = counted_beats(beats, beat_times)
     if not notes:
         return RhythmResult((), beats.time_signature, unit)
 
-    starts = beat_number(np.array([n.start_seconds for n in notes]), beat_times) - origin
+    starts = beat_number(np.array([n.start_seconds for n in notes]), beat_times, numbers)
     ends = fill_short_gaps(
         np.array([n.pitch for n in notes]), starts,
-        beat_number(np.array([n.end_seconds for n in notes]), beat_times) - origin,
+        beat_number(np.array([n.end_seconds for n in notes]), beat_times, numbers),
     )
     owner = np.floor(starts + EARLY_SHARE).astype(int)
     division_of = {
@@ -138,14 +155,6 @@ def fill_short_gaps(pitches: np.ndarray, starts: np.ndarray, ends: np.ndarray) -
         if repeated.any():
             new_ends[i] = min(new_ends[i], starts[repeated].min())
     return new_ends
-
-
-def _origin_beat(beats: BeatAnalysis, beat_times: np.ndarray) -> int:
-    """곡 첫 박(못갖춘마디 시작)의 박 번호."""
-    if not beats.downbeats:
-        return 0
-    first_bar = int(np.argmin(np.abs(beat_times - beats.downbeats[0])))
-    return first_bar - beats.pickup_beats
 
 
 def main(argv: list[str] | None = None) -> int:
