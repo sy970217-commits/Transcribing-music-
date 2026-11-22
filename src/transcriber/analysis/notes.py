@@ -5,6 +5,7 @@
   드럼은 음높이가 없어 빼고, '없다'고 판단된 트랙도 뺀다.
   - 트랙마다 악기 음역 밖의 음은 버린다(새어 들어온 소리·배음 오인식 줄이기).
   - 목소리·베이스는 한 번에 한 음만 내므로 겹친 음 중 하나만 남긴다.
+  - 목소리에서 앞뒤 음보다 크게 튄 음은 옥타브를 잘못 들은 것으로 보고 한 옥타브 옮긴다.
 음 찾기는 Spotify Basic Pitch(transcriber.pitch)를 쓴다.
 
 실행: uv run notes 곡.wav [--separate]
@@ -12,6 +13,7 @@
 
 import argparse
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 from transcriber.analysis.separation import Separation, SeparationError, separate
@@ -27,6 +29,12 @@ TRACK_RANGES = {
     "other": (21, 108),
 }
 MONOPHONIC_TRACKS = frozenset({"vocals", "bass"})
+OCTAVE_FIX_TRACKS = frozenset({"vocals"})
+OCTAVE = 12
+# 앞뒤 음 모두보다 높거나(낮거나), 한쪽과는 SPIKE_BIG, 다른 쪽과는 SPIKE_SMALL 반음 이상 떨어지면 튄 음으로 본다
+# (5도 뛰었다 돌아오는 7·7은 진짜 선율일 수 있어 그대로 둔다)
+SPIKE_BIG = 9
+SPIKE_SMALL = 7
 SAME_START_SECONDS = 0.05  # 이 시간 안에 시작한 음들은 동시에 시작한 것으로 본다
 # 트랙 → (음 시작 기준, 울림 기준, 가장 짧은 음 ms, 이어 붙이기). 문제지 채점으로 고름(시작_F1 평균):
 # 피아노 0.85→0.91, 목소리 0.43→0.77, 베이스 0.62→0.83. 기본값(0.5, 0.4, 128)보다 확실한 시작만 잡는다
@@ -66,6 +74,24 @@ def to_monophonic(notes: tuple[Note, ...]) -> tuple[Note, ...]:
     return tuple(melody)
 
 
+def fix_octave_jumps(notes: tuple[Note, ...]) -> tuple[Note, ...]:
+    """한 줄 선율에서 앞뒤 음보다 크게 튄 음을 한 옥타브 옮긴다. 옮겨서 앞뒤 음과 더 가까워질 때만 옮긴다.
+
+    음 찾기 AI는 목소리의 음높이를 한 옥타브 위나 아래로 잘못 듣는 일이 많다.
+    """
+    fixed = list(notes)
+    for i in range(1, len(fixed) - 1):
+        before, current, after = fixed[i - 1].pitch, fixed[i].pitch, fixed[i + 1].pitch
+        up, down = current - before, current - after
+        gaps = sorted((abs(up), abs(down)))
+        if gaps[0] < SPIKE_SMALL or gaps[1] < SPIKE_BIG or (up > 0) != (down > 0):
+            continue
+        moved = current - OCTAVE if up > 0 else current + OCTAVE
+        if abs(moved - before) + abs(moved - after) < abs(up) + abs(down):
+            fixed[i] = replace(fixed[i], pitch=moved)
+    return tuple(fixed)
+
+
 def recognize_notes(audio_path: str | Path, separation: Separation | None = None) -> dict[str, tuple[Note, ...]]:
     """트랙 이름 → 음 목록(시작 순). 소리 분리가 없으면 {'mix': 전체 음}."""
     if separation is None:
@@ -95,7 +121,8 @@ def clean_track(track: str, notes: tuple[Note, ...]) -> tuple[Note, ...]:
     """악기 음역 밖의 음을 버리고, 한 음씩 내는 악기는 겹친 음을 하나로 줄인다."""
     low, high = TRACK_RANGES.get(track, (0, 127))
     kept = tuple(n for n in notes if low <= n.pitch <= high)
-    return to_monophonic(kept) if track in MONOPHONIC_TRACKS else kept
+    line = to_monophonic(kept) if track in MONOPHONIC_TRACKS else kept
+    return fix_octave_jumps(line) if track in OCTAVE_FIX_TRACKS else line
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -91,3 +91,19 @@ def test_cuts_previous_note_when_next_starts():
 def test_merge_tracks_joins_all_tracks_in_start_order():
     found = {"vocals": (n(64, 1.0, 2.0),), "piano": (n(48, 0.0, 1.0), n(60, 1.0, 2.0))}
     assert [x.pitch for x in merge_tracks(found)] == [48, 60, 64]
+
+
+def test_voice_note_an_octave_off_is_moved_back():
+    line = (n(70, 0, 1), n(84, 1, 2), n(69, 2, 3), n(65, 3, 4), n(53, 4, 5), n(60, 5, 6))
+
+    voice = clean_track("vocals", line)
+
+    assert [x.pitch for x in voice] == [70, 72, 69, 65, 65, 60]  # 위·아래로 튄 음을 한 옥타브 옮김
+
+
+def test_real_leaps_and_piano_notes_are_kept():
+    leap = (n(67, 0, 1), n(60, 1, 2), n(67, 2, 3))  # 5도 내려갔다 올라오는 진짜 선율
+    spike = (n(70, 0, 1), n(84, 1, 2), n(69, 2, 3))
+
+    assert [x.pitch for x in clean_track("vocals", leap)] == [67, 60, 67]
+    assert [x.pitch for x in clean_track("piano", spike)] == [70, 84, 69]
