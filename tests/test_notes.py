@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 
 import transcriber.analysis.notes as notes_module
-from transcriber.analysis.notes import MIX, TRACK_SETTINGS, clean_track, main, recognize_notes
+from transcriber.analysis.notes import MIX, MIX_SETTINGS, TRACK_SETTINGS, clean_track, main, recognize_notes
 from transcriber.analysis.separation import Separation
 from transcriber.pitch import Note, PitchResult
 
@@ -33,7 +33,7 @@ def test_voice_and_bass_keep_one_note_at_a_time():
 def test_each_present_stem_is_read_with_its_settings(monkeypatch, tmp_path):
     calls = []
 
-    def fake_detect(path, onset_threshold, frame_threshold, min_note_ms):
+    def fake_detect(path, onset_threshold, frame_threshold, min_note_ms, melodia_trick):
         calls.append((Path(path).stem, onset_threshold, frame_threshold))
         return PitchResult(notes=(n(60, 0, 1),), midi=None)
 
@@ -54,6 +54,21 @@ def test_without_separation_the_whole_mix_is_read(monkeypatch, tmp_path):
     monkeypatch.setattr(notes_module, "detect_notes", lambda path, **k: PitchResult(notes=(n(60, 0, 1),), midi=None))
 
     assert list(recognize_notes(tmp_path / "song.wav")) == [MIX]
+
+
+def test_separated_piano_keeps_notes_longer_than_the_mix(monkeypatch, tmp_path):
+    """분리한 피아노 트랙은 소리가 약해 울림 기준을 낮추고, 이어 붙이기를 끈다."""
+    calls = []
+    monkeypatch.setattr(
+        notes_module, "detect_notes",
+        lambda path, **k: calls.append(k) or PitchResult(notes=(), midi=None),
+    )
+
+    recognize_notes(tmp_path / "song.wav")
+
+    assert calls[0]["frame_threshold"] == MIX_SETTINGS[1]
+    assert TRACK_SETTINGS["piano"][1] < MIX_SETTINGS[1]
+    assert calls[0]["melodia_trick"] is False
 
 
 def test_cli_reports_bad_file(capsys):

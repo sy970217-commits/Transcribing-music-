@@ -28,13 +28,16 @@ TRACK_RANGES = {
     "other": (21, 108),
 }
 MONOPHONIC_TRACKS = frozenset({"vocals", "bass"})
-# 트랙 → (음 시작 기준, 울림 기준, 가장 짧은 음 ms). 문제지 채점으로 고름(시작_F1 평균):
+# 트랙 → (음 시작 기준, 울림 기준, 가장 짧은 음 ms, 이어 붙이기). 문제지 채점으로 고름(시작_F1 평균):
 # 피아노 0.85→0.91, 목소리 0.43→0.77, 베이스 0.62→0.83. 기본값(0.5, 0.4, 128)보다 확실한 시작만 잡는다
+# 피아노는 소리가 서서히 작아져 음 끝이 일찍 잘린다. 분리한 피아노 트랙은 소리가 약해 울림 기준을 0.3으로
+# 낮추고 이어 붙이기를 끈다(길이까지_F1 노래+피아노 0.18→0.56, 밴드 0.10→0.33)
 TRACK_SETTINGS = {
-    "piano": (0.7, 0.5, 58.0),
-    "vocals": (0.7, 0.4, 58.0),
-    "bass": (0.7, 0.5, 58.0),
+    "piano": (0.7, 0.3, 58.0, False),
+    "vocals": (0.7, 0.4, 58.0, True),
+    "bass": (0.7, 0.5, 58.0, True),
 }
+MIX_SETTINGS = (0.7, 0.5, 58.0, False)  # 섞인 음원 전체(피아노 독주 기준)
 DEFAULT_SETTINGS = TRACK_SETTINGS["piano"]
 MIX = "mix"
 
@@ -52,8 +55,11 @@ def recognize_notes(audio_path: str | Path, separation: Separation | None = None
 
 
 def _detect(path: str | Path, track: str) -> tuple[Note, ...]:
-    onset, frame, shortest = TRACK_SETTINGS.get(track, DEFAULT_SETTINGS)
-    return detect_notes(path, onset_threshold=onset, frame_threshold=frame, min_note_ms=shortest).notes
+    settings = MIX_SETTINGS if track == MIX else TRACK_SETTINGS.get(track, DEFAULT_SETTINGS)
+    onset, frame, shortest, melodia = settings
+    return detect_notes(
+        path, onset_threshold=onset, frame_threshold=frame, min_note_ms=shortest, melodia_trick=melodia
+    ).notes
 
 
 def clean_track(track: str, notes: tuple[Note, ...]) -> tuple[Note, ...]:

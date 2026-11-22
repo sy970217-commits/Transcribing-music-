@@ -43,12 +43,14 @@ def detect_notes(
     onset_threshold: float = ONSET_THRESHOLD,
     frame_threshold: float = FRAME_THRESHOLD,
     min_note_ms: float = MIN_NOTE_MS,
+    melodia_trick: bool = True,
 ) -> PitchResult:
     """음원에서 음을 찾는다. 결과는 시작 시간 순으로 정렬된다.
 
     onset_threshold: 음이 '시작했다'고 볼 기준(클수록 확실한 음만)
     frame_threshold: 음이 '계속 울린다'고 볼 기준
     min_note_ms: 이보다 짧은 음은 버린다
+    melodia_trick: 시작 표시 없이 울리는 소리도 음으로 이어 붙일지(Basic Pitch 기본 동작)
     """
     file_path = validate_audio_path(audio_path)
 
@@ -59,6 +61,7 @@ def detect_notes(
             onset_threshold=onset_threshold,
             frame_threshold=frame_threshold,
             minimum_note_length=min_note_ms,
+            melodia_trick=melodia_trick,
         )
     except Exception as error:
         raise PitchDetectionError(f"음을 찾지 못했습니다: {file_path} ({error})") from error
