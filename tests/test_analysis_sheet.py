@@ -49,3 +49,38 @@ def test_cli_missing_file(capsys):
 
 def test_paths_become_text():
     assert to_plain({"vocals": Path("a/vocals.wav")}) == {"vocals": "a/vocals.wav"}
+
+
+def test_backing_is_placed_without_triplets_when_voice_is_split(monkeypatch):
+    import pytest
+
+    import transcriber.analysis.beats as beats_mod
+    import transcriber.analysis.harmony as harmony_mod
+    import transcriber.analysis.notes as notes_mod
+    import transcriber.analysis.rhythm as rhythm_mod
+    from transcriber.analysis.sheet import analyze_song
+    from transcriber.pitch import Note
+
+    class Stop(Exception):
+        pass
+
+    voice = (Note(start_seconds=0.0, end_seconds=0.5, pitch=60, velocity=70),)
+    piano = (Note(start_seconds=0.0, end_seconds=0.5, pitch=48, velocity=70),)
+    calls = []
+
+    def fake_quantize(notes, beats, allow_triplets=True):
+        calls.append(({n.pitch for n in notes}, allow_triplets))
+        return RhythmResult((), "4/4", Fraction(1))
+
+    def stop(*args, **kwargs):
+        raise Stop
+
+    monkeypatch.setattr(beats_mod, "analyze_beats", lambda path: BEATS)
+    monkeypatch.setattr(notes_mod, "recognize_notes", lambda path, sep: {"vocals": voice, "piano": piano})
+    monkeypatch.setattr(rhythm_mod, "quantize_notes", fake_quantize)
+    monkeypatch.setattr(harmony_mod, "analyze_harmony", stop)
+
+    with pytest.raises(Stop):
+        analyze_song("곡.wav")
+
+    assert ({48}, False) in calls
