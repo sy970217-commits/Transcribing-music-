@@ -7,6 +7,7 @@
   - 목소리·베이스는 한 번에 한 음만 내므로 겹친 음 중 하나만 남긴다.
   - 목소리 트랙에서 소리가 거의 없는 곳(전주·간주)에 잡힌 음은 버린다(다른 악기가 아주 작게 새어 든 것).
   - 목소리에서 틈 없이 쪼개진 같은 높이 음은 한 음으로 합친다(길게 부른 음이 여러 음으로 적히지 않게).
+  - 다른 트랙(피아노 등)에서 베이스와 같은 높이로 같은 때 울린 음은 버린다(베이스가 새어 든 것. 악보에 두 번 적히지 않게).
   - 목소리에서 앞뒤 음보다 크게 튄 음은 옥타브를 잘못 들은 것으로 보고 한 옥타브 옮긴다.
 음 찾기는 Spotify Basic Pitch(transcriber.pitch)를 쓴다.
 
@@ -60,6 +61,8 @@ TRACK_SETTINGS = {
 MIX_SETTINGS = (0.7, 0.5, 58.0, False)  # 섞인 음원 전체(피아노 독주 기준)
 DEFAULT_SETTINGS = TRACK_SETTINGS["piano"]
 MIX = "mix"
+BASS = "bass"
+VOCALS = "vocals"
 
 
 def to_monophonic(notes: tuple[Note, ...]) -> tuple[Note, ...]:
@@ -146,7 +149,25 @@ def recognize_notes(audio_path: str | Path, separation: Separation | None = None
         if track in QUIET_CHECK_TRACKS:
             notes = drop_quiet_notes(notes, _loudness(path), LOUDNESS_HOP_SECONDS)
         found[track] = clean_track(track, notes)
-    return found
+    return drop_bass_doubles(found)
+
+
+def drop_bass_doubles(found: dict[str, tuple[Note, ...]]) -> dict[str, tuple[Note, ...]]:
+    """베이스가 아닌 트랙에서 베이스 음과 높이가 같고 울리는 때가 겹치는 음을 버린다. 목소리 트랙은 그대로 둔다."""
+    bass = found.get(BASS, ())
+    if not bass:
+        return found
+    return {
+        track: notes if track in (BASS, VOCALS) else tuple(n for n in notes if not _doubles_any(n, bass))
+        for track, notes in found.items()
+    }
+
+
+def _doubles_any(note: Note, bass: tuple[Note, ...]) -> bool:
+    return any(
+        b.pitch == note.pitch and b.start_seconds < note.end_seconds and note.start_seconds < b.end_seconds
+        for b in bass
+    )
 
 
 def merge_tracks(found: dict[str, tuple[Note, ...]]) -> tuple[Note, ...]:

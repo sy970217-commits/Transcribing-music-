@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 import transcriber.analysis.notes as notes_module
-from transcriber.analysis.notes import MIX, MIX_SETTINGS, TRACK_SETTINGS, clean_track, drop_quiet_notes, main, merge_tracks, recognize_notes, to_monophonic
+from transcriber.analysis.notes import MIX, MIX_SETTINGS, TRACK_SETTINGS, clean_track, drop_bass_doubles, drop_quiet_notes, main, merge_tracks, recognize_notes, to_monophonic
 from transcriber.analysis.separation import Separation
 from transcriber.pitch import Note, PitchResult
 
@@ -139,3 +139,23 @@ def test_quiet_check_keeps_notes_when_loudness_is_missing():
     found = (n(60, 0, 1),)
 
     assert drop_quiet_notes(found, np.array([]), 0.02) == found
+
+
+def test_piano_notes_doubling_the_bass_are_dropped():
+    found = {
+        "bass": (n(40, 0, 1),),
+        "piano": (n(40, 0.5, 1.5), n(40, 2, 3), n(52, 0, 1)),
+        "vocals": (n(40, 0, 1),),
+    }
+
+    cleaned = drop_bass_doubles(found)
+
+    assert [(x.pitch, x.start_seconds) for x in cleaned["piano"]] == [(40, 2), (52, 0)]  # 겹친 같은 음만 버림
+    assert cleaned["bass"] == found["bass"]
+    assert cleaned["vocals"] == found["vocals"]
+
+
+def test_without_bass_nothing_is_dropped():
+    found = {"piano": (n(40, 0, 1),)}
+
+    assert drop_bass_doubles(found) == found
