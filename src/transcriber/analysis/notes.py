@@ -5,6 +5,7 @@
   드럼은 음높이가 없어 빼고, '없다'고 판단된 트랙도 뺀다.
   - 트랙마다 악기 음역 밖의 음은 버린다(새어 들어온 소리·배음 오인식 줄이기).
   - 목소리·베이스는 한 번에 한 음만 내므로 겹친 음 중 하나만 남긴다.
+  - 목소리 트랙에서 소리가 거의 없는 곳(전주·간주)에 잡힌 음은 버린다(다른 악기가 아주 작게 새어 든 것).
   - 목소리에서 틈 없이 쪼개진 같은 높이 음은 한 음으로 합친다(길게 부른 음이 여러 음으로 적히지 않게).
   - 목소리에서 앞뒤 음보다 크게 튄 음은 옥타브를 잘못 들은 것으로 보고 한 옥타브 옮긴다.
 음 찾기는 Spotify Basic Pitch(transcriber.pitch)를 쓴다.
@@ -16,6 +17,8 @@ import argparse
 import sys
 from dataclasses import replace
 from pathlib import Path
+
+import numpy as np
 
 from transcriber.analysis.separation import Separation, SeparationError, separate
 from transcriber.audio_io import AudioLoadError
@@ -32,6 +35,12 @@ TRACK_RANGES = {
 MONOPHONIC_TRACKS = frozenset({"vocals", "bass"})
 OCTAVE_FIX_TRACKS = frozenset({"vocals"})
 JOIN_TRACKS = frozenset({"vocals"})
+QUIET_CHECK_TRACKS = frozenset({"vocals"})
+# 음이 울리는 동안 가장 큰 소리가 트랙의 큰 소리(상위 10%)의 이 비율보다 작으면 새어 든 소리로 본다.
+# 시험 곡: 새어 든 음 34개는 모두 0.002 이하, 진짜 노래 음은 0.1 이상
+QUIET_RATIO = 0.03
+LOUD_PERCENTILE = 90
+LOUDNESS_HOP_SECONDS = 0.02
 SPLIT_GAP_SECONDS = 0.02  # 같은 높이 음 사이 틈이 이보다 짧으면 길게 부른 한 음이 쪼개진 것으로 본다
 OCTAVE = 12
 # 앞뒤 음 모두보다 높거나(낮거나), 한쪽과는 SPIKE_BIG, 다른 쪽과는 SPIKE_SMALL 반음 이상 떨어지면 튄 음으로 본다
@@ -77,6 +86,21 @@ def to_monophonic(notes: tuple[Note, ...]) -> tuple[Note, ...]:
     return tuple(melody)
 
 
+def drop_quiet_notes(notes: tuple[Note, ...], loudness: np.ndarray, hop_seconds: float) -> tuple[Note, ...]:
+    """트랙 소리 크기(hop_seconds마다 잰 값)를 보고, 거의 들리지 않는 곳에서 잡힌 음을 버린다."""
+    if len(loudness) == 0:
+        return notes
+    floor = np.percentile(loudness, LOUD_PERCENTILE) * QUIET_RATIO
+    kept = []
+    for note in notes:
+        first = int(note.start_seconds / hop_seconds)
+        last = max(first + 1, int(note.end_seconds / hop_seconds))
+        window = loudness[first:last]
+        if len(window) and window.max() >= floor:
+            kept.append(note)
+    return tuple(kept)
+
+
 def join_split_notes(notes: tuple[Note, ...]) -> tuple[Note, ...]:
     """한 줄 선율에서 틈 없이 이어진 같은 높이 음을 한 음으로 합친다.
 
@@ -118,7 +142,10 @@ def recognize_notes(audio_path: str | Path, separation: Separation | None = None
     for track, path in separation.stems.items():
         if track not in TRACK_RANGES or not separation.present(track):
             continue
-        found[track] = clean_track(track, _detect(path, track))
+        notes = _detect(path, track)
+        if track in QUIET_CHECK_TRACKS:
+            notes = drop_quiet_notes(notes, _loudness(path), LOUDNESS_HOP_SECONDS)
+        found[track] = clean_track(track, notes)
     return found
 
 
@@ -133,6 +160,15 @@ def _detect(path: str | Path, track: str) -> tuple[Note, ...]:
     return detect_notes(
         path, onset_threshold=onset, frame_threshold=frame, min_note_ms=shortest, melodia_trick=melodia
     ).notes
+
+
+def _loudness(path: str | Path) -> np.ndarray:
+    """트랙 소리 크기를 LOUDNESS_HOP_SECONDS마다 잰다."""
+    import librosa
+
+    samples, rate = librosa.load(str(path), sr=None, mono=True)
+    hop = max(1, int(rate * LOUDNESS_HOP_SECONDS))
+    return librosa.feature.rms(y=samples, frame_length=hop * 2, hop_length=hop, center=False)[0]
 
 
 def clean_track(track: str, notes: tuple[Note, ...]) -> tuple[Note, ...]:

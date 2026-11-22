@@ -1,9 +1,10 @@
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 import transcriber.analysis.notes as notes_module
-from transcriber.analysis.notes import MIX, MIX_SETTINGS, TRACK_SETTINGS, clean_track, main, merge_tracks, recognize_notes, to_monophonic
+from transcriber.analysis.notes import MIX, MIX_SETTINGS, TRACK_SETTINGS, clean_track, drop_quiet_notes, main, merge_tracks, recognize_notes, to_monophonic
 from transcriber.analysis.separation import Separation
 from transcriber.pitch import Note, PitchResult
 
@@ -37,6 +38,7 @@ def test_each_present_stem_is_read_with_its_settings(monkeypatch, tmp_path):
         calls.append((Path(path).stem, onset_threshold, frame_threshold))
         return PitchResult(notes=(n(60, 0, 1),), midi=None)
 
+    monkeypatch.setattr(notes_module, "_loudness", lambda path: np.array([]))
     monkeypatch.setattr(notes_module, "detect_notes", fake_detect)
     stems = {name: tmp_path / f"{name}.wav" for name in ("vocals", "drums", "bass", "piano", "other")}
     separation = Separation(
@@ -122,3 +124,18 @@ def test_piano_repeated_notes_are_not_joined():
     line = (n(65, 0, 0.5), n(65, 0.5, 1.0))
 
     assert len(clean_track("piano", line)) == 2
+
+
+def test_notes_where_the_voice_track_is_almost_silent_are_dropped():
+    loudness = np.array([0.001] * 50 + [0.5] * 50)  # 0.02초마다: 앞 1초는 거의 조용, 뒤 1초는 노래
+    found = (n(60, 0.2, 0.5), n(62, 1.2, 1.5), n(64, 0.9, 1.1))
+
+    kept = drop_quiet_notes(found, loudness, 0.02)
+
+    assert [x.pitch for x in kept] == [62, 64]  # 조용한 곳의 음만 버림, 노래에 걸친 음은 남김
+
+
+def test_quiet_check_keeps_notes_when_loudness_is_missing():
+    found = (n(60, 0, 1),)
+
+    assert drop_quiet_notes(found, np.array([]), 0.02) == found
