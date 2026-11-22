@@ -234,6 +234,7 @@ def grade() -> dict:
             "박자표": f"{result.time_signature} (정답 {answer['time_signature']})",
             "박자표_맞음": result.time_signature == answer["time_signature"],
             "빠르기": f"{result.tempo_bpm:.1f} (정답 처음 {answer['tempo_bpm'][0]['bpm']})",
+            "못갖춘마디_맞음": result.pickup_beats == answer["pickup_beats"],
         }
     out = AUDIO_DIR / "채점.json"
     out.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")

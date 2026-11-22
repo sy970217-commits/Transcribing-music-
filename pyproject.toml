@@ -19,6 +19,7 @@ rhythm-stats = "transcriber.rhythm_stats:main"
 chord-stats = "transcriber.chord_stats:main"
 chord-name = "transcriber.chord_names:main"
 separate = "transcriber.analysis.separation:main"
+beats = "transcriber.analysis.beats:main"
 
 [dependency-groups]
 dev = ["pytest>=8"]
