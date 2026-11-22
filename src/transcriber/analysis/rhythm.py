@@ -23,6 +23,9 @@ from transcriber.audio_io import AudioLoadError
 from transcriber.pitch import Note, PitchDetectionError
 
 SIMPLE_DIVISIONS = (1, 2, 3, 4)  # 4분음표 박: 그대로, 8분, 셋잇단, 16분
+# 노래 멜로디는 셋잇단이 드물다. 셋잇단을 허락하면 시작은 셋잇단, 끝은 16분에 맞아 7/12 같은 어색한 길이가 생긴다
+# (시험 곡 멜로디의 어색한 길이 122→85개)
+NO_TRIPLET_DIVISIONS = (1, 2, 4)
 COMPOUND_DIVISIONS = (1, 3, 6)  # 점4분음표 박(6/8 등): 그대로, 8분, 16분
 FIT_TOLERANCE = 0.07  # 박 길이 대비 이만큼 안이면 칸에 맞는다고 본다
 EARLY_SHARE = 0.125  # 박보다 이만큼(박 길이 대비) 일찍 시작한 음은 그 박의 첫 칸으로 본다
@@ -111,13 +114,13 @@ def snap_end(value: float, divisions: tuple[int, ...]) -> Fraction:
     return min((snap(value, d) for d in divisions), key=lambda f: abs(float(f) - value))
 
 
-def quantize_notes(notes: tuple[Note, ...], beats: BeatAnalysis) -> RhythmResult:
-    """음 목록을 박에 맞춰 4분음표 단위 위치·길이로 바꾼다."""
+def quantize_notes(notes: tuple[Note, ...], beats: BeatAnalysis, allow_triplets: bool = True) -> RhythmResult:
+    """음 목록을 박에 맞춰 4분음표 단위 위치·길이로 바꾼다. allow_triplets가 거짓이면 셋잇단 칸을 쓰지 않는다."""
     beat_times = np.asarray(beats.beats, dtype=float)
     if len(beat_times) < 2:
         raise RhythmError("박이 2개보다 적어 리듬을 정리할 수 없어요")
     unit = beat_quarters_of(beats)
-    divisions = COMPOUND_DIVISIONS if beats.pulses_per_beat == 3 else SIMPLE_DIVISIONS
+    divisions = _divisions_for(beats, allow_triplets)
     numbers = counted_beats(beats, beat_times)
     if not notes:
         return RhythmResult((), beats.time_signature, unit)
@@ -139,6 +142,13 @@ def quantize_notes(notes: tuple[Note, ...], beats: BeatAnalysis) -> RhythmResult
         result.append(RhythmNote(note.pitch, begin * unit, (finish - begin) * unit, note.velocity))
     ordered = tuple(sorted(result, key=lambda n: (n.start, n.pitch)))
     return RhythmResult(ordered, beats.time_signature, unit)
+
+
+def _divisions_for(beats: BeatAnalysis, allow_triplets: bool) -> tuple[int, ...]:
+    """박을 나눌 칸 수 후보. 6/8처럼 박이 셋으로 나뉘는 박자는 셋잇단이 아니라 보통 8분음표라 그대로 둔다."""
+    if beats.pulses_per_beat == 3:
+        return COMPOUND_DIVISIONS
+    return SIMPLE_DIVISIONS if allow_triplets else NO_TRIPLET_DIVISIONS
 
 
 def fill_short_gaps(pitches: np.ndarray, starts: np.ndarray, ends: np.ndarray) -> np.ndarray:

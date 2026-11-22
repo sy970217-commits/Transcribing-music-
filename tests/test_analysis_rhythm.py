@@ -44,6 +44,24 @@ def test_each_beat_chooses_triplets_or_sixteenths_by_itself():
     assert starts == [0, Fraction(1, 3), Fraction(2, 3), 1, Fraction(5, 4), Fraction(3, 2), Fraction(7, 4)]
 
 
+def test_melody_without_triplets_snaps_to_eighths_and_sixteenths():
+    beats = beats_at([i * 0.6 for i in range(8)])
+    triplets = tuple(n(60 + k, k * 0.2, k * 0.2 + 0.2) for k in range(3))
+
+    result = quantize_notes(triplets, beats, allow_triplets=False)
+
+    assert all((x.start * 4).denominator == 1 and (x.length * 4).denominator == 1 for x in result.notes)
+
+
+def test_compound_meter_keeps_its_eighths_without_triplets():
+    beats = beats_at([i * 0.6 for i in range(6)], signature="6/8", pulses=3)
+    eighths = tuple(n(60 + k, k * 0.2, k * 0.2 + 0.2) for k in range(3))
+
+    with_triplets = placed(quantize_notes(eighths, beats))
+
+    assert placed(quantize_notes(eighths, beats, allow_triplets=False)) == with_triplets
+
+
 def test_compound_meter_counts_in_dotted_quarters():
     beats = beats_at([i * 0.9 for i in range(6)], signature="6/8", pulses=3)  # 점4분음표 = 0.9초
     notes = (n(60, 0.0, 0.3), n(62, 0.3, 0.6), n(64, 0.6, 0.9), n(65, 0.9, 1.8))

@@ -9,7 +9,7 @@
 - expression: 셈여림·페달(H)
 - melody: 멜로디 음·가사·구절(I)
 - separation: 소리 분리 결과(A). --separate를 줄 때만 한다(몇 분 걸림)
-  - 나누면 트랙마다 음을 찾아 합치고, 목소리 트랙이 있으면 멜로디는 목소리 트랙에서 찾는다.
+  - 나누면 트랙마다 음을 찾아 합치고, 목소리 트랙이 있으면 멜로디는 목소리 트랙에서 찾는다(셋잇단 없이 정리).
   - accompaniment: 목소리 트랙을 뺀 반주 음. 악보의 피아노 단에 멜로디가 또 들어가지 않게 한다.
   - 안 나누면 섞인 소리 전체(mix)에서 음을 찾는다.
 
@@ -69,7 +69,7 @@ def analyze_song(
     notes = merge_tracks(found)
     rhythm = quantize_notes(notes, beats)
     vocals = found.get("vocals")
-    melody_source = quantize_notes(vocals, beats) if vocals else rhythm
+    melody_source = quantize_notes(vocals, beats, allow_triplets=False) if vocals else rhythm
     backing = {track: found_notes for track, found_notes in found.items() if track != "vocals"}
     accompaniment = quantize_notes(merge_tracks(backing), beats) if vocals else None
     harmony = analyze_harmony(rhythm, beats)
